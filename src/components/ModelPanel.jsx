@@ -81,9 +81,14 @@ export default function ModelPanel() {
             <IssueNote key={i} issue={issue} compact />
           ))}
 
-        <button className="btn outline block" onClick={() => openCanvas()}>
-          블록 캔버스 열기
-        </button>
+        <div className="split-btns">
+          <button className="btn outline" onClick={() => openCanvas()}>
+            블록 캔버스 열기
+          </button>
+          <button className="btn outline" onClick={() => setView("three")}>
+            3D로 보기
+          </button>
+        </div>
 
         <details className="settings">
           <summary>학습 설정</summary>

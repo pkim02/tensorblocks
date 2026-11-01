@@ -379,3 +379,93 @@ body:has(.app) {
 /* Export dialog */
 .dialog.export { width: min(56rem, calc(100vw - 2rem)); max-width: none; }
 .code-block { max-height: 55vh; overflow: auto; font-size: 12.5px; line-height: 1.5; margin: var(--space-3) 0 0; white-space: pre; }
+
+/* ── 3D view: tour on the left, scene on the right ───── */
+.split-btns { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
+.split-btns .btn { padding-inline: var(--space-2); }
+
+.three-view { height: 100dvh; display: grid; grid-template-columns: minmax(18rem, 24rem) minmax(0, 1fr); }
+.tour {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border-inline-end: 1px solid var(--border);
+  background: var(--surface);
+  overflow-y: auto;
+  min-height: 0;
+}
+.tour > * { margin: 0; }
+.tour-nav { display: flex; align-items: center; justify-content: space-between; }
+.tour-count { font-family: var(--font-mono); font-size: var(--step--1); color: var(--text-muted); }
+.tour-body { display: flex; flex-direction: column; gap: var(--space-3); }
+.tour-body > * { margin: 0; }
+.tour-h { font-size: var(--step-2); }
+.tour-ko { font-size: var(--step-0); font-weight: 400; }
+.tour-picture { padding-inline-start: var(--space-3); border-inline-start: 2px solid var(--accent-9); }
+.legend { padding-inline-start: 1.1em; font-size: var(--step--1); margin: 0; }
+.legend li + li { margin-top: var(--space-1); }
+.tour-sample { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2); background: var(--sunken); border-radius: var(--radius-control); }
+.tour-sample img { border-radius: 4px; flex-shrink: 0; }
+.tour-sample .grow { flex: 1; }
+.toc { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border); }
+.toc li { margin: 0; }
+.toc button {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-control);
+  text-align: start;
+  font-size: var(--step--1);
+}
+.toc button span { font-family: var(--font-mono); color: var(--text-muted); font-size: 12px; }
+.toc button:hover { background: var(--gray-3); }
+.toc button.on { background: var(--accent-3); color: var(--accent-12); font-weight: 700; }
+.toc button.bad span { color: var(--danger-11); }
+.tour-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: auto !important;
+  position: sticky;
+  bottom: calc(-1 * var(--space-4));
+  padding-block: var(--space-2) var(--space-4);
+  background: var(--surface);
+}
+.tour-actions .grow { flex: 1; }
+
+.three-stage { position: relative; min-width: 0; min-height: 0; }
+.three-mount { position: absolute; inset: 0; }
+.three-mount canvas { display: block; }
+.t3-labels { position: absolute; inset: 0; pointer-events: none; }
+.stage-tools { position: absolute; top: var(--space-3); right: var(--space-3); }
+.stage-hint { position: absolute; left: var(--space-3); bottom: var(--space-2); margin: 0; color: var(--text-muted); pointer-events: none; }
+
+.t3-label {
+  display: grid;
+  justify-items: center;
+  padding: 2px 6px;
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--text);
+  background: oklch(1 0 0 / 0.85);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.t3-label b { font-weight: 700; }
+.t3-label span { font-family: var(--font-mono); color: var(--text-muted); font-size: 11px; }
+.t3-label.on { border-color: var(--accent-9); outline: 1px solid var(--accent-9); }
+.t3-label.t3-error { border-color: var(--danger-9); color: var(--danger-11); }
+.t3-label.t3-frozen { background: oklch(0.3 0.015 240 / 0.9); color: oklch(0.97 0 0); border-color: transparent; }
+.t3-label.t3-frozen span { color: oklch(0.85 0 0); }
+.t3-class { display: flex; gap: 6px; justify-items: start; }
+
+@media (max-width: 48rem) {
+  .three-view { height: auto; grid-template-columns: minmax(0, 1fr); grid-template-rows: 60dvh auto; }
+  .three-stage { order: -1; border-bottom: 1px solid var(--border); }
+  .tour { border-inline-end: 0; overflow: visible; }
+}

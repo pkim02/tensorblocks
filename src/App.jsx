@@ -7,12 +7,17 @@ import PreviewPanel from "./components/PreviewPanel.jsx";
 import CanvasView from "./components/CanvasView.jsx";
 import ExportDialog from "./components/ExportDialog.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
+import ThreeView from "./components/ThreeView.jsx";
 
 export default function App() {
   const view = useApp((s) => s.view);
   return (
     <ReactFlowProvider>
-      {view === "canvas" ? (
+      {view === "three" ? (
+        <ErrorBoundary>
+          <ThreeView />
+        </ErrorBoundary>
+      ) : view === "canvas" ? (
         <ErrorBoundary>
           <CanvasView />
         </ErrorBoundary>

@@ -139,6 +139,9 @@ export default function CanvasView() {
         >
           한 줄로 정렬
         </button>
+        <button className="btn outline small" onClick={() => setView("three")}>
+          3D로 보기
+        </button>
         <button className="btn primary small" onClick={() => setExportOpen(true)} disabled={!a.ok}>
           코드 보기
         </button>
