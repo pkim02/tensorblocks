@@ -48,7 +48,7 @@ npm run dev
 - `main`에 바로 올리지 말고 브랜치를 만들어서 PR로 합쳐요.
 - 올리기 전에 `npx prettier --write src`로 코드 모양을 맞춰요 (`.prettierrc`에 설정 있음).
 - 화면은 라이트 모드 전용이에요 (`index.html`의 `data-mode="light"`).
-- 배포: `npm run deploy` (Netlify HAPE 팀 로그인이 필요해요). GitHub에 push한다고 자동으로 배포되지는 않아요.
+- 배포: `main`에 push(또는 PR 합치기)하면 1~2분 뒤 https://tensorblocks.netlify.app 에 자동으로 올라가요. 그러니 `main`에는 잘 돌아가는 것만 합쳐 주세요. 급할 때는 `npm run deploy`로 직접 올릴 수도 있어요 (Netlify HAPE 팀 로그인 필요).
 
 ## 기술
 
