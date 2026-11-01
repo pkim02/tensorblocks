@@ -226,7 +226,191 @@ print("저장했어요: tensorblocks_model.pt")`;
   return { imports, config, data, model, shapes, train, save, backbone, size, head };
 }
 
+// ── VLM (PaliGemma 2) ───────────────────────────────────────
+// A VLM is far too big to build from scratch, so its notebook loads Google's real
+// PaliGemma 2 and checks it against the canvas: same parts, same shapes.
+
+const PALIGEMMA = "google/paligemma2-3b-mix-224";
+const PALIGEMMA_SHAPE = { main: ["input", "siglip", "projector", "concat", "gemma", "textout"], side: ["text", "embedding"] };
+
+function vlmInfo(analysis, nodes) {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const types = (ids) => ids.map((id) => byId.get(id).data.type);
+  const merge = analysis.chain.find((id) => analysis.side[id]);
+  const side = merge ? analysis.side[merge] : [];
+  const text = side.map((id) => byId.get(id)).find((n) => n.data.type === "text");
+  const projector = analysis.chain.map((id) => byId.get(id)).find((n) => n.data.type === "projector");
+  const same =
+    types(analysis.chain).join() === PALIGEMMA_SHAPE.main.join() &&
+    types(side).join() === PALIGEMMA_SHAPE.side.join() &&
+    +projector?.data.params.units === 2304;
+  const rows = analysis.order.map((id) => {
+    const n = byId.get(id);
+    const def = LAYERS[n.data.type];
+    const info = analysis.nodeInfo[id];
+    const p = info.params ? `${fmtCount(info.params)}${def.frozen ? " (고정)" : ""}` : "–";
+    return `| ${side.includes(id) ? "↳ " : ""}${def.name} (${def.ko}) | ${info.outShape ? fmtShape(info.outShape) : "?"} | ${p} |`;
+  });
+  return { prompt: text?.data.params.prompt ?? "caption en", same, table: ["| 블록 | 나가는 모양 | 값 |", "|---|---|---|", ...rows].join("\n") };
+}
+
+function vlmParts(analysis, nodes) {
+  const v = vlmInfo(analysis, nodes);
+  const load = `import os, glob, random
+import torch
+from PIL import Image
+from transformers import AutoProcessor, PaliGemmaForConditionalGeneration
+
+MODEL_ID = "${PALIGEMMA}"
+PROMPT = ${pyStr(v.prompt)}  # TensorBlocks '글 입력' 블록의 질문
+DATA_DIR = "data"
+device = "cuda" if torch.cuda.is_available() else "cpu"
+# T4 GPU는 bfloat16이 느려서 float32로 읽어요(약 12GB). L4, A100이면 bfloat16(약 6GB).
+dtype = torch.bfloat16 if device == "cuda" and torch.cuda.get_device_capability()[0] >= 8 else torch.float32
+processor = AutoProcessor.from_pretrained(MODEL_ID)
+model = PaliGemmaForConditionalGeneration.from_pretrained(MODEL_ID, dtype=dtype, device_map=device).eval()
+print("불러왔어요:", MODEL_ID, dtype, device)
+
+
+def prepare(img, **extra):
+    # "<image>" marks where the 256 image tokens go, in front of the question.
+    inputs = processor(text="<image>" + PROMPT, images=img, return_tensors="pt", **extra).to(device)
+    inputs["pixel_values"] = inputs["pixel_values"].to(dtype)
+    return inputs`;
+
+  const shapes = `# 캔버스의 블록이 실제 PaliGemma 안에서 어디인지, 모양이 같은지 봐요.
+inner = model.model if hasattr(model, "model") else model
+parts = [("SigLIP", inner.vision_tower), ("Projector", inner.multi_modal_projector), ("Gemma 2", inner.language_model)]
+
+
+def show(name):
+    def hook(module, args, output):
+        x = output.last_hidden_state if hasattr(output, "last_hidden_state") else output[0] if isinstance(output, (tuple, list)) else output
+        print(f"{name:<12} → {tuple(x.shape[1:])}")
+    return hook
+
+
+photos = sorted(glob.glob(os.path.join(DATA_DIR, "*", "*")))
+img = Image.open(photos[0]).convert("RGB")
+inputs = prepare(img)
+image_id = processor.tokenizer.convert_tokens_to_ids("<image>")
+n_image = int((inputs["input_ids"] == image_id).sum())
+print(f"입력: 이미지 토큰 자리 {n_image}개 + 글 토큰 {inputs['input_ids'].shape[1] - n_image}개 ({PROMPT!r})")
+hooks = [m.register_forward_hook(show(name)) for name, m in parts]
+with torch.no_grad():
+    out = model(**inputs)
+for h in hooks:
+    h.remove()
+print(f"{'Text Output':<12} → {tuple(out.logits.shape[2:])}  (단어 조각마다 점수)")`;
+
+  const ask = `# 사진 몇 장에 PROMPT로 물어봐요. 답은 한 단어 조각씩 만들어져요.
+from IPython.display import display
+
+for path in random.sample(photos, min(6, len(photos))):
+    img = Image.open(path).convert("RGB")
+    inputs = prepare(img)
+    n = inputs["input_ids"].shape[-1]
+    with torch.no_grad():
+        gen = model.generate(**inputs, max_new_tokens=20, do_sample=False)
+    display(img.resize((96, 96)))
+    print(path, "→", processor.decode(gen[0][n:], skip_special_tokens=True))`;
+
+  const classify = `# 클래스 이름마다 "이게 답일 확률"을 물어서 가장 그럴듯한 이름을 골라요. 학습은 하지 않아요.
+CLASSES = sorted(d for d in os.listdir(DATA_DIR) if os.path.isdir(os.path.join(DATA_DIR, d)))
+LABELS = {c: c for c in CLASSES}  # 영어로 바꾸면 더 잘 맞을 수 있어요. 예: {"동그라미": "circle"}
+PER_CLASS = 5  # 클래스마다 몇 장 시험할지
+
+
+def score(img, label):
+    with torch.no_grad():
+        return -model(**prepare(img, suffix=label)).loss.item()  # 클수록 그럴듯한 답
+
+
+correct = total = 0
+for c in CLASSES:
+    for path in sorted(glob.glob(os.path.join(DATA_DIR, c, "*")))[:PER_CLASS]:
+        img = Image.open(path).convert("RGB")
+        guess = max(CLASSES, key=lambda k: score(img, LABELS[k]))
+        correct += guess == c
+        total += 1
+        print(f"{path:<28} 정답 {c:<8} 고른 답 {guess}")
+print(f"학습 없이 맞힌 비율: {correct / max(total, 1):.0%} ({correct}/{total})")`;
+  return { ...v, load, shapes, ask, classify };
+}
+
+function vlmNotebookCells(analysis, nodes, classes, { photos = "embed" } = {}) {
+  const v = vlmParts(analysis, nodes);
+  return [
+    md(`# TensorBlocks VLM, Colab에서 돌려 보기
+
+[TensorBlocks](https://tensorblocks.netlify.app)에서 블록으로 본 비전-언어 모델(VLM)을 구글의 실제 모델 **PaliGemma 2 (3B)**로 돌려 보는 노트북이에요. 사진과 질문을 함께 넣으면 글로 답해요.
+
+${v.table}
+
+${
+  v.same
+    ? "캔버스 구조가 PaliGemma 2와 같아요. 아래에서 블록마다 나오는 모양이 캔버스와 같은지 확인해요."
+    : "**캔버스 구조가 PaliGemma 2와 조금 달라요.** 이 노트북은 원래 PaliGemma 2 구조로 돌아가요. 캔버스와 어디가 다른지 아래 모양 출력과 비교해 보세요."
+}
+
+이 노트북이 하는 일: ① PaliGemma 2 불러오기 → ② 블록마다 모양 확인 → ③ 내 사진에 질문하기 → ④ 학습 없이 클래스 맞히기`),
+    md(`## 1. 준비: Hugging Face 동의와 토큰
+
+PaliGemma는 구글이 공개했지만, 쓰기 전에 사용 약관에 동의해야 해요. 처음 한 번만 하면 돼요.
+
+1. [huggingface.co/${PALIGEMMA}](https://huggingface.co/${PALIGEMMA})에 로그인해서 약관에 동의해요.
+2. [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)에서 Read 토큰을 만들어요.
+3. 이 노트북 왼쪽의 **열쇠 아이콘(보안 비밀)**에서 이름 \`HF_TOKEN\`으로 토큰을 넣고 노트북 접근을 켜요.
+
+GPU가 필요해요: **런타임 → 런타임 유형 변경 → T4 GPU**. 모델을 내려받는 데 몇 분 걸려요.`),
+    code(v.load),
+    ...photoCells(classes, photos, 224),
+    md(`## 3. 블록마다 모양 보기
+
+사진 한 장을 넣고 SigLIP, Projector, Gemma 2에서 나오는 모양을 찍어요. 캔버스 숫자와 비교해 보세요. 글 토큰 수는 TensorBlocks가 어림한 값과 조금 다를 수 있어요(실제로는 토크나이저가 정해요).`),
+    code(v.shapes),
+    md(`## 4. 내 사진에 질문하기
+
+질문을 바꾸려면 위의 \`PROMPT\`를 고치고 이 칸을 다시 실행하세요. 예: \`"caption ko"\`(한국어로 설명), \`"answer en how many objects?"\``),
+    code(v.ask),
+    md(`## 5. 학습 없이 클래스 맞히기
+
+Teachable Machine처럼 학습시키지 않고, 클래스 이름 중 무엇이 답일 확률이 가장 높은지 VLM에게 물어봐요. 사진 수에 따라 몇 분 걸려요.`),
+    code(v.classify),
+    md(`## 더 해 보기
+
+- 질문(\`PROMPT\`)이나 \`LABELS\` 이름을 바꿔서 맞히는 비율이 어떻게 바뀌는지 보세요.
+- 정확도를 더 올리려면 내 사진으로 미세조정(fine-tuning)해요. 보통 SigLIP과 Gemma는 고정하고 Projector와 일부 층만 학습해요. 메모리가 커서 L4나 A100 GPU를 권장해요.`),
+  ];
+}
+
+function vlmScript(analysis, nodes) {
+  const v = vlmParts(analysis, nodes);
+  return `"""
+TensorBlocks에서 본 VLM을 구글 PaliGemma 2 (3B)로 돌려 보는 코드예요.
+
+준비:
+  pip install torch transformers accelerate pillow
+  huggingface.co/${PALIGEMMA} 에서 약관 동의 후 \`huggingface-cli login\`
+  data/<클래스 이름>/ 폴더마다 사진
+실행:
+  python vlm_paligemma.py
+"""
+${v.load.replace("import os, glob, random", "import os, glob, random")}
+
+
+${v.shapes}
+
+
+${v.ask.replace("from IPython.display import display\n\n", "").replace("    display(img.resize((96, 96)))\n", "")}
+
+
+${v.classify}
+`;
+}
+
 export function pytorchCode(analysis, nodes, classes, settings) {
+  if (analysis.kind === "vlm") return vlmScript(analysis, nodes);
   const t = torchParts(analysis, nodes, classes, settings);
   const names = folders(classes);
   return `"""
@@ -257,6 +441,8 @@ ${t.save}
 // ── Keras ───────────────────────────────────────────────────
 
 export function kerasCode(analysis, nodes, classes, settings) {
+  if (analysis.kind === "vlm")
+    return "# VLM(PaliGemma 2)은 Hugging Face의 PyTorch 모델이라 Keras 코드로는 내보내지 않아요.\n# PyTorch 코드나 Colab 노트북을 써 주세요.\n";
   const { size, backbone, head } = describe(analysis, nodes);
   if (backbone && !backbone.keras) {
     return `# ${LAYERS[backbone.type].name}은(는) Hugging Face의 PyTorch 모델이라 Keras 코드로는 내보낼 수 없어요.\n# PyTorch 코드나 Colab 노트북을 써 주세요.\n`;
@@ -345,12 +531,53 @@ function packPhotos(classes, size) {
   return { photos: out };
 }
 
+// The "2. 사진 데이터" cells: photos packed into a folded cell, or an upload cell when there are none.
+function photoCells(classes, photos, size) {
+  const count = classes.reduce((n, c) => n + c.samples.length, 0);
+  if (photos !== "none" && count > 0) {
+    const packed = photos === "embed" ? packPhotos(classes, size) : null;
+    const listed = packed
+      ? JSON.stringify(packed.photos)
+      : `{${folders(classes)
+          .map((f, i) => `${pyStr(f)}: [...${classes[i].samples.length}장...]`)
+          .join(", ")}}`;
+    return [
+      md(`## 2. 사진 데이터
+
+TensorBlocks에서 모은 사진 ${count}장(클래스 ${classes.length}개)이 이 노트북 안에 들어 있어요. 아래 칸을 실행하면 \`data/\` 폴더에 풀려요.
+내 사진으로 바꾸고 싶으면 왼쪽 파일 창에서 \`data/클래스이름/\` 폴더에 사진을 올리면 돼요.`),
+      code(
+        `#@title 사진 풀기 (사진 데이터가 들어 있어서 코드는 접어 뒀어요)
+import base64, os
+PHOTOS = ${listed}
+for folder, items in PHOTOS.items():
+    os.makedirs(os.path.join(DATA_DIR, folder), exist_ok=True)
+    for i, b64 in enumerate(items):
+        with open(os.path.join(DATA_DIR, folder, f"{i + 1:04d}.jpg"), "wb") as f:
+            f.write(base64.b64decode(b64))
+print({k: len(v) for k, v in PHOTOS.items()})`,
+        { form: true },
+      ),
+    ];
+  }
+  return [
+    md(`## 2. 사진 데이터
+
+아직 사진이 없어요. 왼쪽 파일 창에서 \`data/클래스이름/\` 폴더를 만들고 사진을 올리거나, 아래 칸으로 \`data.zip\`을 올려 주세요.`),
+    code(`from google.colab import files
+import zipfile
+up = files.upload()  # data.zip 안에 data/클래스이름/사진들
+for name in up:
+    zipfile.ZipFile(name).extractall(".")`),
+  ];
+}
+
 // photos: "embed" packs every photo in, "preview" leaves a stand-in (for showing the notebook
 // on screen), "none" gives an upload cell instead.
 export function notebookCells(analysis, nodes, classes, settings, { photos = "embed" } = {}) {
+  if (analysis.kind === "vlm") return vlmNotebookCells(analysis, nodes, classes, { photos });
   const t = torchParts(analysis, nodes, classes, settings);
   const { chain } = describe(analysis, nodes);
-  const count = classes.reduce((n, c) => n + c.samples.length, 0);
 
   const table = [
     "| 블록 | 나가는 모양 | 학습할 값 |",
@@ -374,43 +601,7 @@ ${table}`),
     code(`${t.imports}\n\n${t.config}`),
   ];
 
-  if (photos !== "none" && count > 0) {
-    const packed = photos === "embed" ? packPhotos(classes, Math.min(224, Math.max(t.size, 128))) : null;
-    const listed = packed
-      ? JSON.stringify(packed.photos)
-      : `{${folders(classes)
-          .map((f, i) => `${pyStr(f)}: [...${classes[i].samples.length}장...]`)
-          .join(", ")}}`;
-    cells.push(
-      md(`## 2. 사진 데이터
-
-TensorBlocks에서 모은 사진 ${count}장(클래스 ${classes.length}개)이 이 노트북 안에 들어 있어요. 아래 칸을 실행하면 \`data/\` 폴더에 풀려요.
-내 사진으로 바꾸고 싶으면 왼쪽 파일 창에서 \`data/클래스이름/\` 폴더에 사진을 올리면 돼요.`),
-      code(
-        `#@title 사진 풀기 (사진 데이터가 들어 있어서 코드는 접어 뒀어요)
-import base64, os
-PHOTOS = ${listed}
-for folder, items in PHOTOS.items():
-    os.makedirs(os.path.join(DATA_DIR, folder), exist_ok=True)
-    for i, b64 in enumerate(items):
-        with open(os.path.join(DATA_DIR, folder, f"{i + 1:04d}.jpg"), "wb") as f:
-            f.write(base64.b64decode(b64))
-print({k: len(v) for k, v in PHOTOS.items()})`,
-        { form: true },
-      ),
-    );
-  } else {
-    cells.push(
-      md(`## 2. 사진 데이터
-
-아직 사진이 없어요. 왼쪽 파일 창에서 \`data/클래스이름/\` 폴더를 만들고 사진을 올리거나, 아래 칸으로 \`data.zip\`을 올려 주세요.`),
-      code(`from google.colab import files
-import zipfile
-up = files.upload()  # data.zip 안에 data/클래스이름/사진들
-for name in up:
-    zipfile.ZipFile(name).extractall(".")`),
-    );
-  }
+  cells.push(...photoCells(classes, photos, Math.min(224, Math.max(t.size, 128))));
 
   cells.push(
     code(t.data),
@@ -491,11 +682,16 @@ const canvasToBlob = (c) => new Promise((res) => c.toBlob(res, "image/png"));
 export async function downloadZip(analysis, nodes, classes, settings) {
   const zip = new JSZip();
   const root = zip.folder("tensorblocks-project");
-  const { backbone } = describe(analysis, nodes);
-  root.file("train_pytorch.py", pytorchCode(analysis, nodes, classes, settings));
-  root.file("train_keras.py", kerasCode(analysis, nodes, classes, settings));
+  if (analysis.kind === "vlm") {
+    root.file("vlm_paligemma.py", vlmScript(analysis, nodes));
+    root.file("requirements.txt", "torch\ntransformers\naccelerate\npillow\n");
+  } else {
+    const { backbone } = describe(analysis, nodes);
+    root.file("train_pytorch.py", pytorchCode(analysis, nodes, classes, settings));
+    root.file("train_keras.py", kerasCode(analysis, nodes, classes, settings));
+    root.file("requirements.txt", `torch\ntorchvision\n${backbone?.hf ? "transformers\n" : ""}# Keras로 돌릴 때만:\n# tensorflow\n`);
+  }
   root.file("tensorblocks.ipynb", notebookJSON(analysis, nodes, classes, settings, { photos: "none" }));
-  root.file("requirements.txt", `torch\ntorchvision\n${backbone?.hf ? "transformers\n" : ""}# Keras로 돌릴 때만:\n# tensorflow\n`);
   const names = folders(classes);
   for (let ci = 0; ci < classes.length; ci++) {
     const dir = root.folder(`data/${names[ci]}`);

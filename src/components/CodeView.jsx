@@ -15,6 +15,7 @@ export default function CodeView() {
   const [fmt, setFmt] = useState("nb");
   const [zipping, setZipping] = useState(false);
   const photos = classes.reduce((n, c) => n + c.samples.length, 0);
+  const vlm = a.kind === "vlm";
 
   const cells = useMemo(() => (a.ok ? notebookCells(a, nodes, classes, settings, { photos: "preview" }) : []), [a, nodes, classes, settings]);
   const script = useMemo(() => {
@@ -51,7 +52,7 @@ export default function CodeView() {
       </header>
       <div className="code-body">
         <aside className="code-side">
-          <h1 className="tour-h">Colab에서 학습하기</h1>
+          <h1 className="tour-h">{vlm ? "Colab에서 VLM 돌려 보기" : "Colab에서 학습하기"}</h1>
           <p>
             Colab은 구글이 만든 브라우저 속 파이썬 노트북이에요. 설치 없이 GPU를 무료로 쓸 수 있어요. 블록으로 만든 모델이 노트북 한 개가 되고
             {photos ? `, 모은 사진 ${photos}장도 노트북 안에 함께 들어가요.` : "요. 사진은 Colab에서 올리면 돼요."}
@@ -70,8 +71,9 @@ export default function CodeView() {
                   Colab의 <strong>노트북 열기</strong> 창에서 <strong>업로드</strong>를 누르고 받은 파일을 골라요. 창이 안 보이면 메뉴의{" "}
                   <strong>파일 → 노트북 업로드</strong>예요.
                 </li>
+                {vlm && <li>처음 한 번은 Hugging Face에서 PaliGemma 약관에 동의하고 토큰을 넣어야 해요. 방법은 노트북 1번 칸에 있어요.</li>}
                 <li>
-                  메뉴의 <strong>런타임 → 모두 실행</strong>을 누르면 학습이 시작돼요.
+                  메뉴의 <strong>런타임 → 모두 실행</strong>을 누르면 {vlm ? "구글 PaliGemma 2를 받아서 내 사진에 질문해요." : "학습이 시작돼요."}
                 </li>
               </ol>
               <p className="small muted">
@@ -83,7 +85,10 @@ export default function CodeView() {
                 <button className="btn outline small" onClick={getNotebook}>
                   노트북만 받기 (.ipynb)
                 </button>
-                <button className="btn outline small" onClick={() => downloadText(pytorchCode(a, nodes, classes, settings), "train_pytorch.py")}>
+                <button
+                  className="btn outline small"
+                  onClick={() => downloadText(pytorchCode(a, nodes, classes, settings), a.kind === "vlm" ? "vlm_paligemma.py" : "train_pytorch.py")}
+                >
                   PyTorch 코드 받기 (.py)
                 </button>
                 <button className="btn outline small" onClick={zip} aria-busy={zipping}>

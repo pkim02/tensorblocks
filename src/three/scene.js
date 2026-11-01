@@ -1,6 +1,7 @@
 // 3D picture of the model: every block's output tensor drawn as a box of cells,
 // left to right. Image tensors are H tall, W wide and C deep (one slice per channel);
-// vectors are tall bars. Sizes grow slower than the real numbers (d^0.42) so a
+// vectors are tall bars; token rows (T×D) are walls T deep and D tall. A side branch
+// (a VLM's text) runs on its own lane below and joins the main lane with an arrow. Sizes grow slower than the real numbers (d^0.42) so a
 // 7×7×1280 map and a 224×224×3 photo both fit on screen.
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -170,6 +171,22 @@ function vectorTensor(item) {
   return { group: g, size: new THREE.Vector3(W, H, D), shell };
 }
 
+function tokenTensor(item) {
+  const [t, d] = item.shape;
+  const H = Math.min(L(d) * 1.15, CAP),
+    D = Math.min(L(t), CAP),
+    W = 2.6;
+  const plain = new THREE.MeshBasicMaterial({ color: C.face });
+  // The right face shows the tokens as columns, the front face one token's numbers.
+  const right = new THREE.MeshBasicMaterial({ map: gridTexture(Math.min(t, 32), Math.min(d, 40)) });
+  const front = new THREE.MeshBasicMaterial({ map: gridTexture(1, Math.min(d, 40)) });
+  const shell = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), [right, plain, plain, plain, front, plain]);
+  const g = new THREE.Group();
+  g.add(shell);
+  if (L(d) * 1.15 > CAP) g.add(breakMark(W, H));
+  return { group: g, size: new THREE.Vector3(W, H, D), shell };
+}
+
 function outputTensor(item) {
   const n = item.shape[0];
   const cell = 3.2,
@@ -234,13 +251,18 @@ function breakMark(W, H) {
 }
 
 function arrow(x1, x2, error) {
+  return arrowBetween(new THREE.Vector3(x1, 0, 0), new THREE.Vector3(x2, 0, 0), error);
+}
+
+function arrowBetween(from, to, error) {
   const color = error ? C.error : C.link;
+  const dir = to.clone().sub(from).normalize();
   const g = new THREE.Group();
-  const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(x1, 0, 0), new THREE.Vector3(x2 - 1.4, 0, 0)]);
+  const geo = new THREE.BufferGeometry().setFromPoints([from, to.clone().addScaledVector(dir, -1.4)]);
   g.add(new THREE.Line(geo, new THREE.LineBasicMaterial({ color })));
   const head = new THREE.Mesh(new THREE.ConeGeometry(0.7, 1.6, 12), new THREE.MeshBasicMaterial({ color }));
-  head.rotation.z = -Math.PI / 2;
-  head.position.x = x2 - 0.8;
+  head.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+  head.position.copy(to).addScaledVector(dir, -0.8);
   g.add(head);
   return g;
 }
@@ -304,59 +326,99 @@ export function createScene(el, { onPick } = {}) {
     disposeTree(model);
     model = new THREE.Group();
     items = [];
-    let x = 0;
     let maxH = 0;
 
-    spec.items.forEach((item, index) => {
-      if (item.frozen) {
-        const fb = frozenBlock(item.frozen);
-        if (index > 0) model.add(arrow(x, x + GAP, false));
-        fb.group.position.x = x + GAP + fb.size.x / 2;
-        model.add(fb.group);
-        x += GAP + fb.size.x;
-        maxH = Math.max(maxH, fb.size.y);
-      }
-      const piece =
-        item.kind === "image"
-          ? imageTensor(item)
-          : item.kind === "vector"
-            ? vectorTensor(item)
-            : item.kind === "output"
-              ? outputTensor(item)
-              : ghostTensor(item);
-      if (index > 0) model.add(arrow(x, x + GAP, item.error));
-      const cx = x + GAP * (index > 0 ? 1 : 0) + piece.size.x / 2;
-      piece.group.position.x = cx;
-      model.add(piece.group);
+    // Lays one lane out left to right inside `group`; returns where it ends.
+    function layLane(list, group) {
+      let x = 0;
+      list.forEach(({ item, index }, k) => {
+        if (item.frozen) {
+          const fb = frozenBlock(item.frozen);
+          if (k > 0) group.add(arrow(x, x + GAP, false));
+          fb.group.position.x = x + (k > 0 ? GAP : 0) + fb.size.x / 2;
+          group.add(fb.group);
+          x = fb.group.position.x + fb.size.x / 2;
+          maxH = Math.max(maxH, fb.size.y);
+        }
+        const piece =
+          item.kind === "image"
+            ? imageTensor(item)
+            : item.kind === "tokens"
+              ? tokenTensor(item)
+              : item.kind === "vector"
+                ? vectorTensor(item)
+                : item.kind === "output"
+                  ? outputTensor(item)
+                  : ghostTensor(item);
+        const lead = k > 0 || item.frozen;
+        if (lead) group.add(arrow(x, x + GAP, item.error));
+        const cx = x + (lead ? GAP : 0) + piece.size.x / 2;
+        piece.group.position.x = cx;
+        group.add(piece.group);
 
-      let edges = null;
-      if (!piece.fixedEdges) {
-        edges = new THREE.LineSegments(
-          new THREE.EdgesGeometry(new THREE.BoxGeometry(piece.size.x, piece.size.y, piece.size.z)),
-          new THREE.LineBasicMaterial({ color: C.edge }),
-        );
-        piece.group.add(edges);
-      }
-      const l = label(`<b>${esc(item.name)}</b><span>${esc(item.shapeText)}</span>`, item.error ? "t3-error" : "");
-      l.position.set(0, -piece.size.y / 2 - 1.5, piece.size.z / 2);
-      l.center.set(0.5, 0);
-      piece.group.add(l);
+        let edges = null;
+        if (!piece.fixedEdges) {
+          edges = new THREE.LineSegments(
+            new THREE.EdgesGeometry(new THREE.BoxGeometry(piece.size.x, piece.size.y, piece.size.z)),
+            new THREE.LineBasicMaterial({ color: C.edge }),
+          );
+          piece.group.add(edges);
+        }
+        const l = label(`<b>${esc(item.name)}</b><span>${esc(item.shapeText)}</span>`, item.error ? "t3-error" : "");
+        l.position.set(0, -piece.size.y / 2 - 1.5, piece.size.z / 2);
+        l.center.set(0.5, 0);
+        piece.group.add(l);
+        if (item.caption) {
+          const c = label(esc(item.caption), "t3-caption");
+          c.position.set(0, piece.size.y / 2 + 1.5, 0);
+          c.center.set(0.5, 1);
+          piece.group.add(c);
+        }
 
-      piece.shell.userData.index = index;
-      items.push({ ...piece, edges, labelEl: l.element, center: new THREE.Vector3(cx, 0, 0), index });
-      x = cx + piece.size.x / 2;
-      maxH = Math.max(maxH, piece.size.y);
-    });
+        piece.shell.userData.index = index;
+        items[index] = { ...piece, edges, labelEl: l.element, center: new THREE.Vector3(cx, 0, 0), index, lane: group };
+        x = cx + piece.size.x / 2;
+        maxH = Math.max(maxH, piece.size.y);
+      });
+      return x;
+    }
+
+    const all = spec.items.map((item, index) => ({ item, index }));
+    const main = new THREE.Group();
+    const end = layLane(
+      all.filter((e) => !e.item.lane),
+      main,
+    );
+    model.add(main);
+
+    // Side lanes sit below the main lane, like a second row, and end just before the
+    // block they join; an arrow climbs from their last block into it.
+    let bottom = -maxH / 2;
+    const joins = [...new Set(all.filter((e) => e.item.lane).map((e) => e.item.joins))];
+    for (const j of joins) {
+      const list = all.filter((e) => e.item.lane && e.item.joins === j);
+      const lane = new THREE.Group();
+      maxH = 0;
+      const w = layLane(list, lane);
+      const target = items[j];
+      const y = bottom - 26 - maxH / 2;
+      lane.position.set(target.center.x - target.size.x / 2 - GAP * 2 - w, y, 0);
+      model.add(lane);
+      model.add(arrowBetween(new THREE.Vector3(lane.position.x + w, y, 0), new THREE.Vector3(target.center.x - target.size.x / 2, 0, 0), spec.items[j].error));
+      bottom = y - maxH / 2;
+    }
+    for (const it of items) if (it) it.center.add(it.lane.position);
 
     // Graph-paper floor under the model.
-    const span = Math.max(x, 60);
+    const span = Math.max(end, 60);
     const floor = new THREE.GridHelper(Math.ceil((span + 60) / 4) * 4, Math.ceil((span + 60) / 4), C.floor, C.floorMinor);
-    floor.position.set(x / 2, -maxH / 2 - 6, 0);
+    floor.position.set(end / 2, bottom - 6, 0);
     model.add(floor);
 
     scene.add(model);
+    model.updateMatrixWorld(true);
     bounds = new THREE.Box3();
-    items.forEach((it) => bounds.expandByObject(it.group));
+    items.forEach((it) => it && bounds.expandByObject(it.group));
   }
 
   function frame(center, radius, animate = true) {
@@ -374,7 +436,7 @@ export function createScene(el, { onPick } = {}) {
 
   function focus(index, animate = true) {
     focused = index;
-    items.forEach((it) => {
+    items.filter(Boolean).forEach((it) => {
       const on = index === it.index;
       if (it.edges) it.edges.material.color.setHex(on ? C.edgeOn : C.edge);
       it.labelEl.classList.toggle("on", on);
@@ -400,7 +462,7 @@ export function createScene(el, { onPick } = {}) {
     const p = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(p, camera);
     const hit = ray.intersectObjects(
-      items.map((it) => it.shell),
+      items.filter(Boolean).map((it) => it.shell),
       false,
     )[0];
     if (hit) onPick?.(hit.object.userData.index);

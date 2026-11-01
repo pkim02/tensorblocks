@@ -23,7 +23,8 @@ npm run dev
 
 ## 블록 캔버스에서 되는 것
 
-- 블록 20종: 사전학습 모델 6개(MobileNetV2, EfficientNet-B0, ViT-B/16 (Hugging Face), ResNet-18/50, VGG16), 이미지 층 7개(Conv2D, DepthwiseConv2D, MaxPool, AvgPool, GlobalAvgPool, GlobalMaxPool, Flatten), 벡터 층(Dense, LayerNorm), 활성화(ReLU·LeakyReLU·ELU·SELU·Swish·Sigmoid·Tanh), Dropout, BatchNorm, 입력·출력.
+- **VLM 예시 (구글 PaliGemma 2 방식)**: 모델 틀 맨 위의 "VLM: 사진 보고 답하기". 사진(Image Input → SigLIP → Projector)과 질문(Text Input → Embedding) 두 갈래가 **Concat**에서 합쳐져 Gemma 2 → Text Output으로 가요. 블록 수·모양·값 수는 실제 PaliGemma 2 3B와 같아요 (3.05B). "실수 체험: VLM에서 Projector 빠뜨리기"로 토큰 길이가 안 맞는 에러(1,152 vs 2,304)와 자동 수정을 보여 줄 수 있어요.
+- 블록 28종: VLM 블록 8개(Text Input, Embedding, SigLIP, To Tokens, Projector, Concat, Gemma 2, Text Output), 사전학습 모델 6개(MobileNetV2, EfficientNet-B0, ViT-B/16 (Hugging Face), ResNet-18/50, VGG16), 이미지 층 7개(Conv2D, DepthwiseConv2D, MaxPool, AvgPool, GlobalAvgPool, GlobalMaxPool, Flatten), 벡터 층(Dense, LayerNorm), 활성화(ReLU·LeakyReLU·ELU·SELU·Swish·Sigmoid·Tanh), Dropout, BatchNorm, 입력·출력.
 - MobileNetV2와 직접 쌓은 층은 브라우저에서 바로 학습돼요. 나머지 사전학습 모델은 무거워서 "코드 전용"이에요 (Colab에서 학습).
 - 블록을 끌어다 놓거나 눌러서 넣기. 선 위에 놓으면 그 사이에 끼워져요.
 - 모든 연결선에 텐서 모양(예: `32×32×16`)이 표시돼요.
@@ -48,6 +49,7 @@ npm run dev
 - **노트북 받고 Colab 열기** → Colab의 노트북 열기 창에서 **업로드** → 받은 파일 고르기 → **런타임 → 모두 실행**.
 - 모은 사진이 노트북 안에 들어 있어서(접힌 칸) 따로 올릴 필요가 없어요. GPU(T4)로 열리게 설정돼 있어요.
 - 노트북 순서: 준비 → 사진 풀기 → 데이터 → 모델 → 블록별 모양 출력(캔버스와 같은지 확인) → 학습 → 정확도 그래프 → 내 사진으로 시험 → 저장.
+- VLM 노트북은 구글의 실제 PaliGemma 2 (3B)를 불러와서 블록별 모양 확인 → 내 사진에 질문 → 학습 없이 클래스 이름 맞히기를 해요. 처음 한 번 Hugging Face에서 약관 동의와 토큰(`HF_TOKEN`)이 필요해요.
 - 버튼 한 번에 Colab에 바로 열리게 하려면 Google Drive 연동(구글 클라우드 OAuth 설정)이 필요해서 아직은 파일 업로드 방식이에요.
 
 ## 코드 구조
@@ -55,7 +57,7 @@ npm run dev
 | 파일 | 하는 일 |
 |---|---|
 | `src/model/layers.js` | 블록 목록: 모양 계산, 에러와 고치는 방법, PyTorch/Keras 코드 한 줄 |
-| `src/model/graph.js` | 캔버스 그래프를 따라가며 모든 연결의 모양과 문제를 계산, 모델 틀 |
+| `src/model/graph.js` | 캔버스 그래프를 따라가며 모든 연결의 모양과 문제를 계산 (VLM처럼 두 갈래가 합쳐지는 구조 포함), 모델 틀 |
 | `src/store.js` | 앱 상태 (zustand): 클래스·사진, 블록·연결, 고치기 동작, 학습 상태 |
 | `src/train/train.js` | TF.js 학습. MobileNetV2(Teachable Machine과 같은 가중치)는 고정하고 뒤쪽 블록만 학습 |
 | `src/three/scene.js` | 3D 장면: 텐서 상자, 특징 지도 판, 카메라 이동, 블록 클릭 |

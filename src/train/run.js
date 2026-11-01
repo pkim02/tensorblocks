@@ -12,7 +12,14 @@ export const stopTraining = () => (stopRequested = true);
 export function blockers(analysis, classes) {
   const out = [];
   if (!analysis.ok) out.push({ text: "모델에 고칠 곳이 있어요", canvas: true });
-  if (analysis.exportOnly) out.push({ text: "ResNet-18은 브라우저에서 학습할 수 없어요. 코드로 내보내서 돌려 주세요.", canvas: true });
+  if (analysis.exportOnly)
+    out.push({
+      text:
+        analysis.kind === "vlm"
+          ? "VLM은 너무 커서 브라우저에서 돌릴 수 없어요. Colab 코드로 가져가서 돌려 주세요."
+          : "코드 전용 블록이 있어서 브라우저에서 학습할 수 없어요. Colab 코드로 가져가서 돌려 주세요.",
+      code: true,
+    });
   if (classes.length < 2) out.push({ text: "클래스가 2개 이상 있어야 해요" });
   const thin = classes.filter((c) => c.samples.length < MIN_PER_CLASS);
   if (thin.length) out.push({ text: `${thin.map((c) => `'${c.name}'`).join(", ")}에 사진이 ${MIN_PER_CLASS}장 이상 필요해요` });

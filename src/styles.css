@@ -142,6 +142,8 @@ body:has(.app) {
 }
 .mini-shape.bad { color: var(--danger-11); font-weight: 600; border-color: var(--danger-9); border-inline-start-width: 2px; }
 .mini-shape.warn { color: var(--warning-11); }
+.mini-block.side { margin-inline-start: var(--space-5); width: calc(100% - var(--space-5)); }
+.mini-shape.side { margin-inline-start: calc(var(--space-4) + var(--space-5)) !important; }
 
 .settings summary { cursor: pointer; font-weight: 700; font-size: var(--step--1); padding-block: var(--space-1); }
 .settings-grid { --min: 6rem; --gap: var(--space-3); margin-top: var(--space-3); }
@@ -532,6 +534,7 @@ body:has(.app) {
 .t3-label.t3-frozen { background: oklch(0.3 0.015 240 / 0.9); color: oklch(0.97 0 0); border-color: transparent; }
 .t3-label.t3-frozen span { color: oklch(0.85 0 0); }
 .t3-class { display: flex; gap: 6px; justify-items: start; }
+.t3-label.t3-caption { font-family: var(--font-mono); font-size: 12px; color: var(--accent-11); border-color: var(--accent-9); max-width: 18rem; white-space: normal; text-align: center; }
 
 @media (max-width: 48rem) {
   .three-view { height: auto; }

@@ -1,11 +1,12 @@
 import { create } from "zustand";
 import { applyNodeChanges, applyEdgeChanges } from "@xyflow/react";
 import { LAYERS } from "./model/layers.js";
-import { analyze, buildChain, makeEdge, makeNode, newId, TEMPLATES, GAP_X, NODE_W } from "./model/graph.js";
+import { analyze, buildTemplate, makeEdge, makeNode, newId, sidePosition, TEMPLATES, GAP_X, NODE_W } from "./model/graph.js";
 
 const newClass = (name) => ({ id: newId("c"), name, samples: [] });
 
-const startTemplate = TEMPLATES[0];
+// The app opens on the model that trains in the browser; the VLM example sits first in the list.
+const startTemplate = TEMPLATES.find((t) => t.id === "tm");
 
 export const useApp = create((set, get) => ({
   // Data ------------------------------------------------------------------
@@ -24,21 +25,31 @@ export const useApp = create((set, get) => ({
 
   // Model graph -------------------------------------------------------------
   templateId: startTemplate.id,
-  ...buildChain(startTemplate.spec),
+  ...buildTemplate(startTemplate),
   selectedId: null,
 
   onNodesChange: (changes) => set((s) => ({ nodes: applyNodeChanges(changes, s.nodes) })),
   onEdgesChange: (changes) => set((s) => ({ edges: applyEdgeChanges(changes, s.edges) })),
   onConnect: ({ source, target }) => {
     if (source === target) return;
-    // One way in, one way out: a new link replaces the old ones on both ends.
-    set((s) => ({ templateId: null, edges: [...s.edges.filter((e) => e.source !== source && e.target !== target), makeEdge(source, target)] }));
+    // One way in, one way out: a new link replaces the old ones on both ends. A merge
+    // block (Concat) keeps up to two ways in.
+    set((s) => {
+      const merge = LAYERS[s.nodes.find((n) => n.id === target)?.data.type]?.merge;
+      let edges = s.edges.filter((e) => e.source !== source && (merge || e.target !== target));
+      // Already two ways in: keep the main line and swap out the side one.
+      if (merge && edges.filter((e) => e.target === target).length >= 2) {
+        const keep = mainInto({ ...s, edges }, target);
+        edges = edges.filter((e) => e.target !== target || e === keep);
+      }
+      return { templateId: null, edges: [...edges, makeEdge(source, target)] };
+    });
   },
   select: (selectedId) => set({ selectedId }),
 
   loadTemplate: (id) => {
     const t = TEMPLATES.find((x) => x.id === id);
-    set({ templateId: id, selectedId: null, ...buildChain(t.spec) });
+    set({ templateId: id, selectedId: null, ...buildTemplate(t) });
   },
 
   // Adds a block. Dropped on a spot → placed there; clicked in the palette → slotted
@@ -54,7 +65,7 @@ export const useApp = create((set, get) => ({
     }
     const a = analyze(s.nodes, s.edges, s.classes.length);
     const last = s.nodes.find((n) => n.id === a.chain[a.chain.length - 1]);
-    if (type !== "output" && last?.data.type === "output" && a.chain.length > 1) {
+    if (!LAYERS[type].terminal && last && LAYERS[last.data.type].terminal && a.chain.length > 1) {
       const into = s.edges.find((e) => e.target === last.id);
       if (into) return get().insertOnEdge(into.id, type);
     }
@@ -95,7 +106,7 @@ export const useApp = create((set, get) => ({
     const s = get();
     const node = s.nodes.find((n) => n.id === nodeId);
     if (!node || node.deletable === false) return;
-    const into = s.edges.find((e) => e.target === nodeId);
+    const into = mainInto(s, nodeId);
     const outOf = s.edges.find((e) => e.source === nodeId);
     const edges = s.edges.filter((e) => e.source !== nodeId && e.target !== nodeId);
     if (into && outOf) edges.push(makeEdge(into.source, outOf.target));
@@ -118,8 +129,9 @@ export const useApp = create((set, get) => ({
     const s = get();
     switch (action.kind) {
       case "insertBefore": {
-        const into = s.edges.find((e) => e.target === nodeId);
-        if (into) get().insertOnEdge(into.id, action.type);
+        const main = mainInto(s, nodeId);
+        const into = action.side ? s.edges.find((e) => e.target === nodeId && e !== main) : main;
+        if (into) get().insertOnEdge(into.id, action.type, action.params && makeNode(action.type, { x: 0, y: 0 }, action.params));
         break;
       }
       case "remove":
@@ -147,19 +159,29 @@ export const useApp = create((set, get) => ({
         get().tidy();
         break;
       }
+      case "addSide": {
+        const text = makeNode("text", { x: 0, y: 0 });
+        const emb = makeNode("embedding", { x: 0, y: 0 });
+        set({ nodes: [...s.nodes, text, emb], edges: [...s.edges, makeEdge(text.id, emb.id), makeEdge(emb.id, nodeId)], templateId: null });
+        get().tidy();
+        break;
+      }
     }
   },
 
-  // Lines the connected blocks up in one row to the right of the input.
+  // Lines the connected blocks up in one row to the right of the input; a side branch
+  // goes in the row below, ending just before the block it joins.
   tidy: () => {
     const s = get();
     const a = analyze(s.nodes, s.edges, s.classes.length);
     const head = s.nodes.find((n) => n.id === a.chain[0]);
     if (!head) return;
-    const order = new Map(a.chain.map((id, i) => [id, i]));
-    set({
-      nodes: s.nodes.map((n) => (order.has(n.id) ? { ...n, position: { x: head.position.x + order.get(n.id) * GAP_X, y: head.position.y } } : n)),
-    });
+    const pos = new Map(a.chain.map((id, i) => [id, { x: head.position.x + i * GAP_X, y: head.position.y }]));
+    for (const [mergeId, ids] of Object.entries(a.side)) {
+      const at = a.chain.indexOf(mergeId);
+      ids.forEach((id, k) => pos.set(id, sidePosition(head.position, at, ids.length, k)));
+    }
+    set({ nodes: s.nodes.map((n) => (pos.has(n.id) ? { ...n, position: pos.get(n.id) } : n)) });
   },
 
   // Training ------------------------------------------------------------------
@@ -185,6 +207,15 @@ export const useAnalysis = () => {
 };
 
 // An edge runs from the right middle of one block to the left middle of the next.
+// The link into a block along the main line (a merge block has a second one from its side branch).
+function mainInto(s, nodeId) {
+  const into = s.edges.filter((e) => e.target === nodeId);
+  if (into.length < 2) return into[0];
+  const a = analyze(s.nodes, s.edges, s.classes.length);
+  const i = a.chain.indexOf(nodeId);
+  return into.find((e) => i > 0 && e.source === a.chain[i - 1]) || into[0];
+}
+
 function nearestEdge(s, pos) {
   const byId = new Map(s.nodes.map((n) => [n.id, n]));
   const p = { x: pos.x + NODE_W / 2, y: pos.y + 45 };

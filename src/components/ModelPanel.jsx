@@ -19,6 +19,9 @@ export default function ModelPanel() {
   const train = useApp((s) => s.train);
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const blocks = blockers(a, classes);
+  // A model with code-only blocks (a VLM, ResNet…) goes to Colab instead of training here.
+  const codeOnly = a.ok && a.exportOnly;
+  const sideOf = new Map(Object.entries(a.side).flatMap(([merge, ids]) => ids.map((id, k) => [id, { merge, first: k === 0 }])));
   const busy = train.status === "training";
 
   const openCanvas = (nodeId = null) => {
@@ -46,21 +49,30 @@ export default function ModelPanel() {
         </div>
 
         <ol className="mini-chain" aria-label="모델 구조">
-          {a.chain.map((id, i) => {
+          {a.order.map((id, i) => {
             const n = byId.get(id);
             const def = LAYERS[n.data.type];
             const info = a.nodeInfo[id];
             const bad = info.issue?.level === "error";
+            const side = sideOf.get(id);
+            const joined = a.side[id] && a.nodeInfo[a.side[id][a.side[id].length - 1]].outShape;
             return (
               <Fragment key={id}>
-                {i > 0 && (
-                  <li className={`mini-shape ${bad ? "bad" : info.issue ? "warn" : ""}`} aria-hidden="true">
-                    {info.blocked ? "?" : fmtShape(info.inShape)}
-                    {bad && " ← 안 맞음"}
+                {side?.first ? (
+                  <li className="mini-shape side" aria-hidden="true">
+                    + 두 번째 입력
                   </li>
+                ) : (
+                  i > 0 && (
+                    <li className={`mini-shape ${side ? "side" : ""} ${bad ? "bad" : info.issue ? "warn" : ""}`} aria-hidden="true">
+                      {info.blocked ? "?" : fmtShape(info.inShape)}
+                      {joined && ` + ${fmtShape(joined)}`}
+                      {bad && " ← 안 맞음"}
+                    </li>
+                  )
                 )}
                 <li>
-                  <button className={`mini-block ${bad ? "bad" : ""}`} onClick={() => openCanvas(id)}>
+                  <button className={`mini-block ${side ? "side" : ""} ${bad ? "bad" : ""}`} onClick={() => openCanvas(id)}>
                     <span className="mini-name">{def.name}</span>
                     <span className="mini-sum">{def.summary(n.data.params, { numClasses: a.numClasses })}</span>
                   </button>
@@ -132,13 +144,17 @@ export default function ModelPanel() {
 
         {blocks.length > 0 && !busy && (
           <ul className="blockers">
-            {blocks.map((b, i) => (
+            {(codeOnly ? blocks.filter((b) => b.code) : blocks).map((b, i) => (
               <li key={i}>{b.text}</li>
             ))}
           </ul>
         )}
 
-        {busy ? (
+        {codeOnly ? (
+          <button className="btn primary block large" onClick={() => setView("code")}>
+            Colab 코드로 가져가기
+          </button>
+        ) : busy ? (
           <button className="btn outline block large" onClick={stopTraining}>
             학습 멈추기
           </button>

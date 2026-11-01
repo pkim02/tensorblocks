@@ -221,7 +221,7 @@ function BlockNode({ id, data }) {
 
   return (
     <div className={cls.filter(Boolean).join(" ")}>
-      {data.type !== "input" && <Handle type="target" position={Position.Left} />}
+      {!def.source && <Handle type="target" position={Position.Left} />}
       <div className="block-head">
         <span className="block-name">{def.name}</span>
         <span className="block-ko">{def.exportOnly ? "코드 전용" : def.ko}</span>
@@ -237,9 +237,9 @@ function BlockNode({ id, data }) {
               : info.params
                 ? `학습할 값 ${fmtCount(info.params)}`
                 : "학습할 값 없음"}
-        {data.type === "output" && info.outShape && <span className="mono"> → {fmtShape(info.outShape)}</span>}
+        {def.terminal && info.outShape && <span className="mono"> → {fmtShape(info.outShape)}</span>}
       </div>
-      {data.type !== "output" && <Handle type="source" position={Position.Right} />}
+      {!def.terminal && <Handle type="source" position={Position.Right} />}
       {extra.map((issue, i) => (
         <IssueNote key={i} issue={issue} className="note-side nodrag" />
       ))}
@@ -261,7 +261,7 @@ function ShapeEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, tar
         <div className={`shape-tag tag-${state} nodrag nopan`} style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)` }}>
           {!info ? "연결 안 됨" : info.blocked ? "?" : fmtShape(info.shape)}
         </div>
-        {level && (
+        {level && !info.side && (
           <IssueNote issue={info.issue} className="note-edge nodrag nopan" style={{ transform: `translate(-50%, 0) translate(${lx}px, ${ly + 66}px)` }} />
         )}
       </EdgeLabelRenderer>
@@ -288,7 +288,7 @@ function Inspector() {
           <tbody>
             <tr>
               <td>블록</td>
-              <td className="num">{a.chain.length}개</td>
+              <td className="num">{a.order.length}개</td>
             </tr>
             <tr>
               <td>학습할 값</td>
@@ -346,6 +346,8 @@ function Inspector() {
                 </option>
               ))}
             </select>
+          ) : f.type === "text" ? (
+            <input id={`f-${f.key}`} type="text" value={p[f.key]} onChange={(e) => setParam(node.id, f.key, e.target.value)} />
           ) : (
             <input
               id={`f-${f.key}`}

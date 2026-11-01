@@ -1,10 +1,12 @@
 // Block catalog: what each block is, how it changes the tensor shape, what can go wrong,
 // and how it is written in TF.js / PyTorch / Keras.
-// Shapes are channels-last arrays: [H, W, C] for images, [N] for vectors.
+// Shapes are channels-last arrays: [H, W, C] for images, [N] for vectors, and [T, D] for a
+// row of T tokens that are D numbers long (what a VLM passes around).
 
 export const fmtShape = (s) => (!s ? "?" : s.length === 1 ? s[0].toLocaleString("en-US") : s.join("×"));
 
 export const fmtCount = (n = 0) => {
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
   if (n >= 1e6) return `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M`;
   if (n >= 1e4) return `${Math.round(n / 1e3)}K`;
   return n.toLocaleString("en-US");
@@ -12,6 +14,8 @@ export const fmtCount = (n = 0) => {
 
 const is3D = (s) => s && s.length === 3;
 const is1D = (s) => s && s.length === 1;
+const is2D = (s) => s && s.length === 2;
+const describeShape = (s) => (is2D(s) ? `토큰 줄(${fmtShape(s)})` : is1D(s) ? `한 줄로 펴진 벡터(${fmtShape(s)})` : `이미지 모양(${fmtShape(s)})`);
 
 const ACTIVATIONS = [
   { value: "relu", label: "ReLU" },
@@ -28,12 +32,20 @@ function needsImage(name, inShape) {
   return {
     level: "error",
     title: "여기 모양이 안 맞아요",
-    text: `${name}은(는) 세로×가로×채널 모양의 이미지를 받아야 해요. 그런데 이미 한 줄로 펴진 벡터(${fmtShape(inShape)})가 들어오고 있어요.`,
+    text: `${name}은(는) 세로×가로×채널 모양의 이미지를 받아야 해요. 그런데 ${describeShape(inShape)}가 들어오고 있어요.`,
     fixes: [{ label: "이 블록 지우기", action: { kind: "remove" } }],
   };
 }
 
 function needsVector(name, inShape) {
+  if (!is3D(inShape)) {
+    return {
+      level: "error",
+      title: "여기 모양이 안 맞아요",
+      text: `${name}은(는) 한 줄짜리 벡터만 받아요. 지금은 ${describeShape(inShape)}가 들어와요.`,
+      fixes: [{ label: "이 블록 지우기", action: { kind: "remove" } }],
+    };
+  }
   const [h, w, c] = inShape;
   return {
     level: "error",
@@ -50,6 +62,43 @@ function needsVector(name, inShape) {
         action: { kind: "insertBefore", type: "flatten" },
       },
     ],
+  };
+}
+
+function needsTokens(name, inShape) {
+  const fixes = is3D(inShape)
+    ? [
+        {
+          label: `To Tokens 넣기 → ${fmtShape([inShape[0] * inShape[1], inShape[2]])}`,
+          note: "칸 하나를 토큰 하나로",
+          action: { kind: "insertBefore", type: "totokens" },
+        },
+      ]
+    : [];
+  return {
+    level: "error",
+    title: "토큰 줄이 아니에요",
+    text: `${name}은(는) 토큰 개수×칸 수 모양의 토큰 줄을 받아요. 지금은 ${describeShape(inShape)}가 들어와요.`,
+    fixes: [...fixes, { label: "이 블록 지우기", action: { kind: "remove" } }],
+  };
+}
+
+// Gemma 2 2B, the language half of PaliGemma 2 (3B). Numbers from the Hugging Face model.
+export const GEMMA = { dim: 2304, vocab: 257216 };
+
+// Roughly how many tokens a prompt becomes, counting the start token and the "\n" PaliGemma adds.
+export function promptTokens(prompt) {
+  let n = 2;
+  for (const w of String(prompt).trim().split(/\s+/).filter(Boolean)) n += /^[\x00-\x7f]+$/.test(w) ? Math.ceil(w.length / 6) : Math.ceil(w.length / 2);
+  return n;
+}
+
+function needsTokenIds(inShape) {
+  return {
+    level: "error",
+    title: "글이 아니에요",
+    text: `Embedding은 '글 입력'에서 나온 단어 조각 번호를 받아요. 지금은 ${describeShape(inShape)}가 들어와요.`,
+    fixes: [{ label: "이 블록 지우기", action: { kind: "remove" } }],
   };
 }
 
@@ -178,6 +227,7 @@ export const LAYERS = {
   input: {
     name: "Image Input",
     ko: "이미지 입력",
+    source: true,
     group: "io",
     defaults: { size: 96 },
     fields: [
@@ -445,10 +495,208 @@ export const LAYERS = {
     params: () => 0,
   },
 
+  // ── Vision-language model (PaliGemma 2 style) ────────────────────
+  text: {
+    name: "Text Input",
+    ko: "글 입력",
+    group: "io",
+    source: true,
+    exportOnly: true,
+    defaults: { prompt: "answer en What shape is this?" },
+    fields: [
+      {
+        key: "prompt",
+        label: "질문",
+        type: "text",
+        hint: "PaliGemma는 'answer en 질문', 'caption ko'(한국어로 설명해 줘) 같은 형식으로 물어봐요.",
+      },
+    ],
+    about: "모델에게 할 질문이에요. 글자는 토크나이저가 단어 조각(토큰) 번호로 잘라요. VLM에는 입력이 두 개예요: 사진과 이 글.",
+    summary: (p) => `“${String(p.prompt).slice(0, 22)}${String(p.prompt).length > 22 ? "…" : ""}”`,
+    infer: (_, p) => ({ out: [promptTokens(p.prompt)] }),
+    params: () => 0,
+  },
+
+  embedding: {
+    name: "Embedding",
+    ko: "Gemma 단어 사전",
+    group: "pretrained",
+    pretrained: true,
+    exportOnly: true,
+    frozen: true,
+    defaults: {},
+    fields: [],
+    about: `단어 조각 번호 하나를 ${GEMMA.dim.toLocaleString("en-US")}칸짜리 벡터(토큰)로 바꿔요. Gemma가 미리 배운 ${GEMMA.vocab.toLocaleString("en-US")}개짜리 사전이에요.`,
+    summary: () => `번호 → ${GEMMA.dim.toLocaleString("en-US")}칸`,
+    infer: (inShape) => (is1D(inShape) ? { out: [inShape[0], GEMMA.dim] } : { error: needsTokenIds(inShape) }),
+    params: () => GEMMA.vocab * GEMMA.dim,
+  },
+
+  siglip: {
+    name: "SigLIP",
+    ko: "비전 인코더",
+    group: "pretrained",
+    pretrained: true,
+    exportOnly: true,
+    frozen: true,
+    defaults: {},
+    fields: [],
+    about:
+      "구글이 사진과 설명글 짝으로 학습시킨 Vision Transformer예요. 224×224 사진을 14×14 조각 256개로 잘라서, 조각마다 1,152칸짜리 벡터(토큰)로 바꿔요. PaliGemma의 '눈'이에요.",
+    summary: () => "사진 → 토큰 256개",
+    infer: (inShape, _, ctx) => {
+      if (!is3D(inShape)) return { error: needsImage("SigLIP", inShape) };
+      const bad = pretrainedRules("SigLIP", 224, inShape, ctx);
+      return bad ? { error: bad } : { out: [256, 1152] };
+    },
+    params: () => 427680704,
+  },
+
+  totokens: {
+    name: "To Tokens",
+    ko: "칸을 토큰으로",
+    group: "vlm",
+    exportOnly: true,
+    defaults: {},
+    fields: [],
+    about: "세로×가로×채널 특징 지도를 칸마다 하나의 토큰으로 펼쳐요. 7×7×1,280이면 1,280칸짜리 토큰 49개가 돼요. CNN의 특징도 언어 모델에 넘길 수 있어요.",
+    summary: () => "H×W×C → (H·W)×C",
+    infer: (inShape) => (is3D(inShape) ? { out: [inShape[0] * inShape[1], inShape[2]] } : { error: needsImage("To Tokens", inShape) }),
+    params: () => 0,
+  },
+
+  projector: {
+    name: "Projector",
+    ko: "이미지 → 글 공간",
+    group: "vlm",
+    exportOnly: true,
+    defaults: { units: GEMMA.dim },
+    fields: [
+      {
+        key: "units",
+        label: "토큰 칸 수",
+        type: "number",
+        min: 1,
+        max: 4096,
+        hint: `언어 모델이 읽는 크기에 맞춰요. Gemma 2 2B는 ${GEMMA.dim.toLocaleString("en-US")}칸이에요.`,
+      },
+    ],
+    about:
+      "이미지 토큰을 언어 모델이 읽는 크기로 바꾸는 Linear 층이에요. 이게 있어야 이미지 토큰과 글 토큰을 이어 붙일 수 있어요. VLM을 만들 때 가장 먼저 학습하는 부분이에요.",
+    summary: (p) => `토큰마다 → ${(+p.units).toLocaleString("en-US")}칸`,
+    infer: (inShape, p) => (is2D(inShape) ? { out: [inShape[0], +p.units] } : { error: needsTokens("Projector", inShape) }),
+    params: (inShape, p) => inShape[1] * p.units + +p.units,
+  },
+
+  concat: {
+    name: "Concat",
+    ko: "토큰 이어 붙이기",
+    group: "vlm",
+    merge: true,
+    exportOnly: true,
+    defaults: {},
+    fields: [],
+    about:
+      "이미지 토큰 뒤에 글 토큰을 이어 붙여서 한 줄로 만들어요. 그래서 언어 모델이 사진과 질문을 한꺼번에 읽어요. 두 갈래가 합쳐지는 블록이에요(입력 2개).",
+    summary: () => "이미지 토큰 + 글 토큰",
+    infer: (inShape, _, ctx) => {
+      if (!ctx.side) {
+        return {
+          error: {
+            level: "error",
+            title: "글 쪽이 비어 있어요",
+            text: "Concat은 입력이 두 개예요. 이미지 토큰 말고 글(질문) 토큰도 이어 줘야 해요.",
+            fixes: [{ label: "글 입력 + Embedding 붙이기", action: { kind: "addSide" } }],
+          },
+        };
+      }
+      if (!is2D(inShape)) return { error: needsTokens("Concat", inShape) };
+      const side = ctx.side.shape;
+      if (is1D(side)) {
+        return {
+          error: {
+            level: "error",
+            title: "글이 아직 번호예요",
+            text: `글 쪽에서 단어 조각 번호 ${side[0]}개가 그대로 들어와요. 이어 붙이려면 번호마다 벡터(토큰)로 바꿔야 해요.`,
+            fixes: [{ label: `Embedding 넣기 → ${fmtShape([side[0], GEMMA.dim])}`, action: { kind: "insertBefore", type: "embedding", side: true } }],
+          },
+        };
+      }
+      if (!is2D(side)) return { error: needsTokens("Concat(글 쪽)", side) };
+      if (inShape[1] !== side[1]) {
+        return {
+          error: {
+            level: "error",
+            title: "토큰 길이가 달라서 못 붙여요",
+            text: `이미지 토큰은 ${inShape[1].toLocaleString("en-US")}칸, 글 토큰은 ${side[1].toLocaleString("en-US")}칸이에요. 한 줄로 이으려면 토큰 하나의 길이가 같아야 해요. PyTorch였다면 torch.cat에서 "Sizes of tensors must match" 에러가 났을 거예요.`,
+            fixes: [
+              {
+                label: `Projector 넣기 → ${fmtShape([inShape[0], side[1]])}`,
+                note: "이미지 토큰을 글 토큰 길이로",
+                action: { kind: "insertBefore", type: "projector", params: { units: side[1] } },
+              },
+            ],
+          },
+        };
+      }
+      return { out: [inShape[0] + side[0], inShape[1]] };
+    },
+    params: () => 0,
+  },
+
+  gemma: {
+    name: "Gemma 2",
+    ko: "언어 모델",
+    group: "pretrained",
+    pretrained: true,
+    exportOnly: true,
+    frozen: true,
+    defaults: {},
+    fields: [],
+    about:
+      "구글의 언어 모델 Gemma 2 (2B)예요. 이미지 토큰과 글 토큰을 한 줄로 읽고, 토큰마다 앞의 모든 토큰을 살펴봐요(어텐션). 26층짜리 Transformer라서 모양은 그대로예요.",
+    summary: () => "26층 Transformer",
+    infer: (inShape) => {
+      if (!is2D(inShape)) return { error: needsTokens("Gemma 2", inShape) };
+      if (inShape[1] !== GEMMA.dim) {
+        return {
+          error: {
+            level: "error",
+            title: "Gemma가 못 읽는 길이예요",
+            text: `Gemma 2 2B는 ${GEMMA.dim.toLocaleString("en-US")}칸짜리 토큰만 읽어요. 지금 토큰은 ${inShape[1].toLocaleString("en-US")}칸이에요.`,
+            fixes: [
+              {
+                label: `Projector 넣기 → ${fmtShape([inShape[0], GEMMA.dim])}`,
+                action: { kind: "insertBefore", type: "projector", params: { units: GEMMA.dim } },
+              },
+            ],
+          },
+        };
+      }
+      return { out: inShape };
+    },
+    params: () => 2024517888,
+  },
+
+  textout: {
+    name: "Text Output",
+    ko: "글 출력",
+    group: "io",
+    terminal: true,
+    exportOnly: true,
+    defaults: {},
+    fields: [],
+    about: `마지막 토큰을 단어 조각 ${GEMMA.vocab.toLocaleString("en-US")}개의 점수로 바꿔서 가장 그럴듯한 다음 단어를 골라요. 이걸 반복해서 답을 한 조각씩 써요. Embedding 사전을 거꾸로 쓰기 때문에 따로 학습할 값이 없어요.`,
+    summary: () => "다음 단어 고르기",
+    infer: (inShape) => (is2D(inShape) ? { out: [GEMMA.vocab] } : { error: needsTokens("Text Output", inShape) }),
+    params: () => 0,
+  },
+
   output: {
     name: "Output",
     ko: "분류 출력",
     group: "io",
+    terminal: true,
     defaults: {},
     fields: [],
     about: "클래스 수만큼 점수를 내고, 합이 100%인 확률로 바꿔요(Softmax). 클래스 수는 데이터에서 자동으로 맞춰져요.",
@@ -462,6 +710,7 @@ export const LAYERS = {
 };
 
 export const PALETTE = [
+  { title: "비전-언어 모델 (VLM)", items: ["text", "embedding", "siglip", "totokens", "projector", "concat", "gemma", "textout"] },
   { title: "사전학습 모델", items: ["mobilenet", "efficientnet", "vit", "resnet18", "resnet50", "vgg16"] },
   { title: "이미지 층", items: ["conv2d", "depthwise", "maxpool", "avgpool", "gap", "gmp", "flatten"] },
   { title: "벡터 층", items: ["dense", "layernorm"] },
@@ -472,7 +721,7 @@ export const PALETTE = [
 // Code lines --------------------------------------------------------------
 
 // PyTorch is channels-first; shapes in comments are written C×H×W to match.
-export const torchShape = (s) => (s.length === 3 ? `${s[2]}×${s[0]}×${s[1]}` : String(s[0]));
+export const torchShape = (s) => (s.length === 3 ? `${s[2]}×${s[0]}×${s[1]}` : s.join("×"));
 
 export function torchLines(type, p, inShape, outShape) {
   const act = (a) => (torchAct[a] ? [`${torchAct[a]},`] : []);
@@ -508,6 +757,22 @@ export function torchLines(type, p, inShape, outShape) {
       return [inShape.length === 3 ? `nn.BatchNorm2d(${inShape[2]}),` : `nn.BatchNorm1d(${inShape[0]}),`];
     case "output":
       return [`nn.Linear(${inShape[0]}, NUM_CLASSES),`];
+    case "text":
+      return [`input_ids = processor(text=${JSON.stringify(p.prompt)}, ...)["input_ids"]`];
+    case "embedding":
+      return ["text_tokens = model.model.language_model.embed_tokens(input_ids)"];
+    case "siglip":
+      return ["image_tokens = model.model.vision_tower(pixel_values).last_hidden_state"];
+    case "totokens":
+      return ["x = x.flatten(2).transpose(1, 2)  # (N, C, H, W) → (N, H·W, C)"];
+    case "projector":
+      return [`nn.Linear(${inShape[1]}, ${p.units})  # multi_modal_projector`];
+    case "concat":
+      return ["x = torch.cat([image_tokens, text_tokens], dim=1)"];
+    case "gemma":
+      return ["x = model.model.language_model(inputs_embeds=x).last_hidden_state"];
+    case "textout":
+      return ["logits = model.lm_head(x[:, -1])  # 다음 단어 점수", "next_id = logits.argmax(-1)"];
     default:
       return [];
   }
