@@ -82,6 +82,96 @@ function pretrainedRules(name, size, inShape, ctx) {
   return null;
 }
 
+// Pretrained models that are too big for the browser: shape checks and code export only.
+function exportBackbone({ name, ko = "사전학습 모델", about, out, params }) {
+  return {
+    name,
+    ko,
+    group: "pretrained",
+    defaults: {},
+    fields: [],
+    pretrained: true,
+    exportOnly: true,
+    about: `${about} 브라우저에서 돌리기엔 무거워서, 코드로 내보내 Colab이나 내 컴퓨터에서 학습해요.`,
+    summary: () => "코드 내보내기 전용",
+    infer: (inShape, _, ctx) => {
+      if (!is3D(inShape)) return { error: needsImage(name, inShape) };
+      const bad = pretrainedRules(name, 224, inShape, ctx);
+      return bad ? { error: bad } : { out };
+    },
+    params: () => params,
+    frozen: true,
+  };
+}
+
+const POOL_FIELD = {
+  key: "pool",
+  label: "창 크기",
+  type: "select",
+  options: [2, 3, 4].map((v) => ({ value: v, label: `${v}×${v}` })),
+  hint: "2×2면 가로·세로가 절반이 돼요.",
+};
+
+const KERNEL_FIELDS = [
+  {
+    key: "kernel",
+    label: "커널 크기",
+    type: "select",
+    options: [1, 3, 5, 7].map((v) => ({ value: v, label: `${v}×${v}` })),
+    hint: "한 번에 들여다보는 창의 크기",
+  },
+  {
+    key: "stride",
+    label: "보폭 (stride)",
+    type: "select",
+    options: [1, 2].map((v) => ({ value: v, label: String(v) })),
+    hint: "2로 하면 출력 크기가 절반이 돼요.",
+  },
+  {
+    key: "padding",
+    label: "가장자리",
+    type: "select",
+    options: [
+      { value: "same", label: "same (크기 유지)" },
+      { value: "valid", label: "valid (조금 줄어듦)" },
+    ],
+  },
+];
+
+// Spatial size after a k×k window with stride s (TF "same"/"valid" rules).
+function convOut(name, inShape, p, channels) {
+  const [h, w] = inShape;
+  const k = +p.kernel,
+    s = +p.stride;
+  const size = (n) => (p.padding === "same" ? Math.ceil(n / s) : Math.floor((n - k) / s) + 1);
+  const oh = size(h),
+    ow = size(w);
+  if (oh < 1 || ow < 1) {
+    const fixes = p.padding === "valid" ? [{ label: "가장자리를 same으로", action: { kind: "setParam", key: "padding", value: "same" } }] : [];
+    return { error: tooSmall(name, inShape, fixes) };
+  }
+  return { out: [oh, ow, channels] };
+}
+
+function poolOut(name, inShape, p) {
+  if (!is3D(inShape)) return { error: needsImage(name, inShape) };
+  const [h, w, c] = inShape;
+  const oh = Math.floor(h / p.pool),
+    ow = Math.floor(w / p.pool);
+  if (oh < 1 || ow < 1) return { error: tooSmall(name, inShape) };
+  return { out: [oh, ow, c] };
+}
+
+export const ACTIVATION_FNS = [
+  { value: "relu", label: "ReLU", torch: "nn.ReLU()" },
+  { value: "leakyrelu", label: "LeakyReLU", torch: "nn.LeakyReLU(0.2)" },
+  { value: "elu", label: "ELU", torch: "nn.ELU()" },
+  { value: "selu", label: "SELU", torch: "nn.SELU()" },
+  { value: "swish", label: "Swish (SiLU)", torch: "nn.SiLU()" },
+  { value: "sigmoid", label: "Sigmoid", torch: "nn.Sigmoid()" },
+  { value: "tanh", label: "Tanh", torch: "nn.Tanh()" },
+];
+
 // Catalog -----------------------------------------------------------------
 
 export const LAYERS = {
@@ -132,7 +222,7 @@ export const LAYERS = {
     fields: [],
     pretrained: true,
     exportOnly: true,
-    about: "마이크로소프트 연구팀이 만든 유명한 이미지 모델이에요. 브라우저에서 돌리기엔 무거워서, PyTorch 코드로 내보내 내 컴퓨터에서 학습해요.",
+    about: "마이크로소프트 연구팀이 만든 유명한 이미지 모델이에요. 브라우저에서 돌리기엔 무거워서, 코드로 내보내 Colab이나 내 컴퓨터에서 학습해요.",
     summary: () => "코드 내보내기 전용",
     infer: (inShape, _, ctx) => {
       if (!is3D(inShape)) return { error: needsImage("ResNet-18", inShape) };
@@ -143,6 +233,36 @@ export const LAYERS = {
     frozen: true,
   },
 
+  resnet50: exportBackbone({
+    name: "ResNet-50",
+    about: "ResNet-18보다 훨씬 깊은 50층짜리 버전이에요. 사진을 7×7 칸마다 2,048가지 특징으로 바꿔요.",
+    out: [7, 7, 2048],
+    params: 23508032,
+  }),
+
+  efficientnet: exportBackbone({
+    name: "EfficientNet-B0",
+    about: "구글이 '크기에 비해 가장 정확하게' 설계한 모델이에요. MobileNet만큼 가볍지만 더 정확해요. 7×7×1,280 특징을 내요.",
+    out: [7, 7, 1280],
+    params: 4007548,
+  }),
+
+  vgg16: exportBackbone({
+    name: "VGG16",
+    about: "Conv2D와 MaxPool을 차곡차곡 쌓은 고전 모델이에요. 구조가 단순해서 공부하기 좋지만 무거워요. 7×7×512 특징을 내요.",
+    out: [7, 7, 512],
+    params: 14714688,
+  }),
+
+  vit: exportBackbone({
+    name: "ViT-B/16",
+    ko: "Hugging Face",
+    about:
+      "구글이 만든 Vision Transformer예요. 사진을 16×16 조각 196개로 잘라 문장처럼 읽고(Self-Attention), 사진 전체를 768칸 벡터 하나로 요약해요. Hugging Face에서 받아오고, PyTorch 코드로만 내보내요.",
+    out: [768],
+    params: 86389248,
+  }),
+
   conv2d: {
     name: "Conv2D",
     ko: "특징 찾기",
@@ -150,48 +270,25 @@ export const LAYERS = {
     defaults: { filters: 16, kernel: 3, stride: 1, padding: "same", activation: "relu" },
     fields: [
       { key: "filters", label: "필터 수", type: "number", min: 1, max: 256, hint: "찾을 특징의 종류 수. 출력 채널이 돼요." },
-      {
-        key: "kernel",
-        label: "커널 크기",
-        type: "select",
-        options: [1, 3, 5, 7].map((v) => ({ value: v, label: `${v}×${v}` })),
-        hint: "한 번에 들여다보는 창의 크기",
-      },
-      {
-        key: "stride",
-        label: "보폭 (stride)",
-        type: "select",
-        options: [1, 2].map((v) => ({ value: v, label: String(v) })),
-        hint: "2로 하면 출력 크기가 절반이 돼요.",
-      },
-      {
-        key: "padding",
-        label: "가장자리",
-        type: "select",
-        options: [
-          { value: "same", label: "same (크기 유지)" },
-          { value: "valid", label: "valid (조금 줄어듦)" },
-        ],
-      },
+      ...KERNEL_FIELDS,
       { key: "activation", label: "활성화 함수", type: "select", options: ACTIVATIONS },
     ],
     about: "작은 창(커널)으로 사진을 훑으면서 선, 모서리, 무늬 같은 특징을 찾아요. 필터 수만큼 '특징 지도'가 생겨요.",
     summary: (p) => `필터 ${p.filters}개, ${p.kernel}×${p.kernel}${p.stride > 1 ? `, 보폭 ${p.stride}` : ""}`,
-    infer: (inShape, p) => {
-      if (!is3D(inShape)) return { error: needsImage("Conv2D", inShape) };
-      const [h, w] = inShape;
-      const k = +p.kernel,
-        s = +p.stride;
-      const size = (n) => (p.padding === "same" ? Math.ceil(n / s) : Math.floor((n - k) / s) + 1);
-      const oh = size(h),
-        ow = size(w);
-      if (oh < 1 || ow < 1) {
-        const fixes = p.padding === "valid" ? [{ label: "가장자리를 same으로", action: { kind: "setParam", key: "padding", value: "same" } }] : [];
-        return { error: tooSmall("Conv2D", inShape, fixes) };
-      }
-      return { out: [oh, ow, +p.filters] };
-    },
+    infer: (inShape, p) => (is3D(inShape) ? convOut("Conv2D", inShape, p, +p.filters) : { error: needsImage("Conv2D", inShape) }),
     params: (inShape, p) => p.kernel * p.kernel * inShape[2] * p.filters + +p.filters,
+  },
+
+  depthwise: {
+    name: "DepthwiseConv2D",
+    ko: "채널별 특징",
+    group: "image",
+    defaults: { kernel: 3, stride: 1, padding: "same", activation: "relu" },
+    fields: [...KERNEL_FIELDS, { key: "activation", label: "활성화 함수", type: "select", options: ACTIVATIONS }],
+    about: "채널마다 따로 작은 창을 훑어요. 채널끼리 섞지 않아서 Conv2D보다 계산이 훨씬 적어요. 구글 MobileNet이 가벼운 비결이에요. 채널 수는 그대로예요.",
+    summary: (p) => `${p.kernel}×${p.kernel}, 채널마다 따로${p.stride > 1 ? `, 보폭 ${p.stride}` : ""}`,
+    infer: (inShape, p) => (is3D(inShape) ? convOut("DepthwiseConv2D", inShape, p, inShape[2]) : { error: needsImage("DepthwiseConv2D", inShape) }),
+    params: (inShape, p) => p.kernel * p.kernel * inShape[2] + inShape[2],
   },
 
   maxpool: {
@@ -199,25 +296,22 @@ export const LAYERS = {
     ko: "크기 줄이기",
     group: "image",
     defaults: { pool: 2 },
-    fields: [
-      {
-        key: "pool",
-        label: "창 크기",
-        type: "select",
-        options: [2, 3, 4].map((v) => ({ value: v, label: `${v}×${v}` })),
-        hint: "2×2면 가로·세로가 절반이 돼요.",
-      },
-    ],
+    fields: [POOL_FIELD],
     about: "2×2 칸마다 가장 큰 값만 남겨서 이미지를 작게 만들어요. 계산이 줄고, 위치가 조금 달라도 같은 걸로 알아봐요.",
     summary: (p) => `${p.pool}×${p.pool}마다 최댓값`,
-    infer: (inShape, p) => {
-      if (!is3D(inShape)) return { error: needsImage("MaxPool2D", inShape) };
-      const [h, w, c] = inShape;
-      const oh = Math.floor(h / p.pool),
-        ow = Math.floor(w / p.pool);
-      if (oh < 1 || ow < 1) return { error: tooSmall("MaxPool2D", inShape) };
-      return { out: [oh, ow, c] };
-    },
+    infer: (inShape, p) => poolOut("MaxPool2D", inShape, p),
+    params: () => 0,
+  },
+
+  avgpool: {
+    name: "AvgPool2D",
+    ko: "평균으로 줄이기",
+    group: "image",
+    defaults: { pool: 2 },
+    fields: [POOL_FIELD],
+    about: "2×2 칸마다 평균을 내서 이미지를 작게 만들어요. MaxPool보다 부드럽게 줄여서, 넓게 퍼진 특징을 살려요.",
+    summary: (p) => `${p.pool}×${p.pool}마다 평균`,
+    infer: (inShape, p) => poolOut("AvgPool2D", inShape, p),
     params: () => 0,
   },
 
@@ -233,6 +327,18 @@ export const LAYERS = {
       if (!is3D(inShape)) return { error: needsImage("GlobalAvgPool", inShape) };
       return { out: [inShape[2]] };
     },
+    params: () => 0,
+  },
+
+  gmp: {
+    name: "GlobalMaxPool",
+    ko: "최댓값으로 요약",
+    group: "image",
+    defaults: {},
+    fields: [],
+    about: "특징 지도마다 가장 큰 값 하나만 남겨요. 그 특징이 사진 어딘가에 '있는지 없는지'를 보는 방식이에요.",
+    summary: () => "채널마다 최댓값 1개",
+    infer: (inShape) => (is3D(inShape) ? { out: [inShape[2]] } : { error: needsImage("GlobalMaxPool", inShape) }),
     params: () => 0,
   },
 
@@ -313,6 +419,32 @@ export const LAYERS = {
     params: (inShape) => 2 * inShape[inShape.length - 1],
   },
 
+  layernorm: {
+    name: "LayerNorm",
+    ko: "한 줄 안에서 고르게",
+    group: "vector",
+    defaults: {},
+    fields: [],
+    about: "벡터 하나 안의 값들을 평균 0, 분산 1로 맞춰요. Transformer(ViT, GPT)에 꼭 들어가는 층이에요. 여기서는 1차원 벡터 뒤에 써요.",
+    summary: () => "벡터마다 정규화",
+    infer: (inShape) => (is1D(inShape) ? { out: inShape } : { error: needsVector("LayerNorm", inShape) }),
+    params: (inShape) => 2 * inShape[0],
+  },
+
+  activation: {
+    name: "Activation",
+    ko: "활성화",
+    group: "vector",
+    defaults: { fn: "relu" },
+    fields: [
+      { key: "fn", label: "함수", type: "select", options: ACTIVATION_FNS, hint: "Conv2D, Dense 안에도 들어 있지만 PyTorch처럼 따로 놓을 수도 있어요." },
+    ],
+    about: "숫자를 휘게(비선형) 만들어서, 모델이 직선 하나로는 못 나누는 것도 배우게 해요. 모양은 그대로예요.",
+    summary: (p) => ACTIVATION_FNS.find((a) => a.value === p.fn)?.label ?? p.fn,
+    infer: (inShape) => ({ out: inShape }),
+    params: () => 0,
+  },
+
   output: {
     name: "Output",
     ko: "분류 출력",
@@ -330,9 +462,10 @@ export const LAYERS = {
 };
 
 export const PALETTE = [
-  { title: "사전학습 모델", items: ["mobilenet", "resnet18"] },
-  { title: "이미지 층", items: ["conv2d", "maxpool", "gap", "flatten"] },
-  { title: "벡터 층", items: ["dense", "dropout", "batchnorm"] },
+  { title: "사전학습 모델", items: ["mobilenet", "efficientnet", "vit", "resnet18", "resnet50", "vgg16"] },
+  { title: "이미지 층", items: ["conv2d", "depthwise", "maxpool", "avgpool", "gap", "gmp", "flatten"] },
+  { title: "벡터 층", items: ["dense", "layernorm"] },
+  { title: "활성화와 규제", items: ["activation", "dropout", "batchnorm"] },
   { title: "입력과 출력", items: ["input", "output"] },
 ];
 
@@ -348,10 +481,23 @@ export function torchLines(type, p, inShape, outShape) {
       const pad = p.padding === "same" ? Math.floor(p.kernel / 2) : 0;
       return [`nn.Conv2d(${inShape[2]}, ${p.filters}, kernel_size=${p.kernel}, stride=${p.stride}, padding=${pad}),`, ...act(p.activation)];
     }
+    case "depthwise": {
+      const pad = p.padding === "same" ? Math.floor(p.kernel / 2) : 0;
+      const c = inShape[2];
+      return [`nn.Conv2d(${c}, ${c}, kernel_size=${p.kernel}, stride=${p.stride}, padding=${pad}, groups=${c}),`, ...act(p.activation)];
+    }
     case "maxpool":
       return [`nn.MaxPool2d(${p.pool}),`];
+    case "avgpool":
+      return [`nn.AvgPool2d(${p.pool}),`];
     case "gap":
       return ["nn.AdaptiveAvgPool2d(1),", "nn.Flatten(),"];
+    case "gmp":
+      return ["nn.AdaptiveMaxPool2d(1),", "nn.Flatten(),"];
+    case "layernorm":
+      return [`nn.LayerNorm(${inShape[0]}),`];
+    case "activation":
+      return [`${ACTIVATION_FNS.find((a) => a.value === p.fn)?.torch ?? "nn.ReLU()"},`];
     case "flatten":
       return ["nn.Flatten(),"];
     case "dense":
@@ -372,10 +518,20 @@ export function kerasLines(type, p) {
   switch (type) {
     case "conv2d":
       return [`layers.Conv2D(${p.filters}, ${p.kernel}, strides=${p.stride}, padding="${p.padding}"${act(p.activation)}),`];
+    case "depthwise":
+      return [`layers.DepthwiseConv2D(${p.kernel}, strides=${p.stride}, padding="${p.padding}"${act(p.activation)}),`];
     case "maxpool":
       return [`layers.MaxPooling2D(${p.pool}),`];
+    case "avgpool":
+      return [`layers.AveragePooling2D(${p.pool}),`];
     case "gap":
       return ["layers.GlobalAveragePooling2D(),"];
+    case "gmp":
+      return ["layers.GlobalMaxPooling2D(),"];
+    case "layernorm":
+      return ["layers.LayerNormalization(),"];
+    case "activation":
+      return [p.fn === "leakyrelu" ? "layers.LeakyReLU(negative_slope=0.2)," : `layers.Activation("${p.fn}"),`];
     case "flatten":
       return ["layers.Flatten(),"];
     case "dense":

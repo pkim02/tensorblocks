@@ -175,8 +175,6 @@ export const useApp = create((set, get) => ({
   demoData: false,
   view: "main",
   setView: (view) => set({ view }),
-  exportOpen: false,
-  setExportOpen: (exportOpen) => set({ exportOpen }),
 }));
 
 export const useAnalysis = () => {

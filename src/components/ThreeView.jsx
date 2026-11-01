@@ -3,6 +3,7 @@ import { useApp, useAnalysis } from "../store.js";
 import { LAYERS, fmtShape, fmtCount, torchLines, torchShape } from "../model/layers.js";
 import { inspect } from "../train/train.js";
 import { createScene } from "../three/scene.js";
+import ViewTabs from "./ViewTabs.jsx";
 
 // "3D로 보기": the model as 3D tensors on the right, a step-by-step tour on the left.
 // Step 0 is the overview; step i (1…n) is the i-th block in the chain.
@@ -11,7 +12,6 @@ export default function ThreeView() {
   const nodes = useApp((s) => s.nodes);
   const classes = useApp((s) => s.classes);
   const trained = useApp((s) => s.trained);
-  const setView = useApp((s) => s.setView);
   const [step, setStep] = useState(0);
   const [sample, setSample] = useState(() => randomSample(classes));
   const mountRef = useRef(null);
@@ -38,10 +38,11 @@ export default function ThreeView() {
           error: info.issue?.level === "error",
         };
         if (!info.outShape) return { ...base, kind: "ghost" };
+        // Pretrained blocks get a dark "frozen" block in front of what they output (3D maps or a vector, as with ViT).
+        if (def.pretrained) base.frozen = def.name;
         if (n.data.type === "input") return { ...base, kind: "image", input: sample?.canvas };
         if (n.data.type === "output") return { ...base, kind: "output", values: act?.values, classNames: classes.map((c) => c.name) };
-        if (info.outShape.length === 3)
-          return { ...base, kind: "image", maps: act?.kind === "maps" ? act.maps : null, frozen: def.pretrained ? def.name : null };
+        if (info.outShape.length === 3) return { ...base, kind: "image", maps: act?.kind === "maps" ? act.maps : null };
         return { ...base, kind: "vector", values: act?.values };
       }),
     }),
@@ -81,64 +82,67 @@ export default function ThreeView() {
 
   return (
     <div className="three-view">
-      <aside className="tour" aria-label="모델 둘러보기">
-        <div className="tour-nav">
-          <button className="btn ghost small" onClick={() => setView("main")}>
-            ← 돌아가기
-          </button>
-          <span className="tour-count">{step === 0 ? "전체" : `${step} / ${chain.length}`}</span>
-        </div>
-        <div className="tour-body">
-          {node ? (
-            <Step node={node} info={a.nodeInfo[node.id]} act={acts?.[node.id]} live={live} classes={classes} />
-          ) : (
-            <Overview a={a} chain={chain} live={live} trained={trained} />
-          )}
-        </div>
-
-        {live && (
-          <div className="tour-sample">
-            <img src={sample.thumb} alt="모델에 넣은 사진" width="40" height="40" />
-            <span className="small grow">이 사진이 블록을 지나가는 모습이에요.</span>
-            <button className="btn outline small" onClick={() => setSample(randomSample(classes, sample))} disabled={total < 2}>
-              다른 사진
-            </button>
+      <header className="work-bar">
+        <ViewTabs />
+      </header>
+      <div className="three-body">
+        <aside className="tour" aria-label="모델 둘러보기">
+          <div className="tour-nav">
+            <span className="small muted">둘러보기</span>
+            <span className="tour-count">{step === 0 ? "전체" : `${step} / ${chain.length}`}</span>
           </div>
-        )}
+          <div className="tour-body">
+            {node ? (
+              <Step node={node} info={a.nodeInfo[node.id]} act={acts?.[node.id]} live={live} classes={classes} />
+            ) : (
+              <Overview a={a} chain={chain} live={live} trained={trained} />
+            )}
+          </div>
 
-        <ol className="toc" aria-label="블록 목록">
-          <li>
-            <button className={step === 0 ? "on" : ""} onClick={() => setStep(0)}>
-              전체 보기
-            </button>
-          </li>
-          {chain.map((n, i) => (
-            <li key={n.id}>
-              <button className={`${step === i + 1 ? "on" : ""} ${a.nodeInfo[n.id].issue?.level === "error" ? "bad" : ""}`} onClick={() => setStep(i + 1)}>
-                {LAYERS[n.data.type].name}
-                <span>{a.nodeInfo[n.id].outShape ? fmtShape(a.nodeInfo[n.id].outShape) : "?"}</span>
+          {live && (
+            <div className="tour-sample">
+              <img src={sample.thumb} alt="모델에 넣은 사진" width="40" height="40" />
+              <span className="small grow">이 사진이 블록을 지나가는 모습이에요.</span>
+              <button className="btn outline small" onClick={() => setSample(randomSample(classes, sample))} disabled={total < 2}>
+                다른 사진
+              </button>
+            </div>
+          )}
+
+          <ol className="toc" aria-label="블록 목록">
+            <li>
+              <button className={step === 0 ? "on" : ""} onClick={() => setStep(0)}>
+                전체 보기
               </button>
             </li>
-          ))}
-        </ol>
+            {chain.map((n, i) => (
+              <li key={n.id}>
+                <button className={`${step === i + 1 ? "on" : ""} ${a.nodeInfo[n.id].issue?.level === "error" ? "bad" : ""}`} onClick={() => setStep(i + 1)}>
+                  {LAYERS[n.data.type].name}
+                  <span>{a.nodeInfo[n.id].outShape ? fmtShape(a.nodeInfo[n.id].outShape) : "?"}</span>
+                </button>
+              </li>
+            ))}
+          </ol>
 
-        <div className="tour-actions">
-          <button className="btn outline" onClick={() => setStep((s) => Math.max(0, s - 1))} disabled={step === 0}>
-            이전
-          </button>
-          <button className="btn primary grow" onClick={() => setStep((s) => Math.min(chain.length, s + 1))} disabled={step === chain.length}>
-            {step === 0 ? "둘러보기 시작" : "계속"}
-          </button>
+          <div className="tour-actions">
+            <button className="btn outline" onClick={() => setStep((s) => Math.max(0, s - 1))} disabled={step === 0}>
+              이전
+            </button>
+            <button className="btn primary grow" onClick={() => setStep((s) => Math.min(chain.length, s + 1))} disabled={step === chain.length}>
+              {step === 0 ? "둘러보기 시작" : "계속"}
+            </button>
+          </div>
+        </aside>
+        <div className="three-stage">
+          <div ref={mountRef} className="three-mount" />
+          <div className="stage-tools">
+            <button className="btn outline small" onClick={() => setStep(0)}>
+              전체 보기
+            </button>
+          </div>
+          <p className="stage-hint small">드래그해서 돌리고 스크롤로 확대해요. 블록을 누르면 설명이 나와요.</p>
         </div>
-      </aside>
-      <div className="three-stage">
-        <div ref={mountRef} className="three-mount" />
-        <div className="stage-tools">
-          <button className="btn outline small" onClick={() => setStep(0)}>
-            전체 보기
-          </button>
-        </div>
-        <p className="stage-hint small">드래그해서 돌리고 스크롤로 확대해요. 블록을 누르면 설명이 나와요.</p>
       </div>
     </div>
   );

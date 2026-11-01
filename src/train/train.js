@@ -31,8 +31,25 @@ function makeLayer(node, extra, numClasses) {
   switch (node.data.type) {
     case "conv2d":
       return tf.layers.conv2d({ filters: +p.filters, kernelSize: +p.kernel, strides: +p.stride, padding: p.padding, activation: p.activation, ...extra });
+    case "depthwise":
+      return tf.layers.depthwiseConv2d({
+        kernelSize: +p.kernel,
+        strides: +p.stride,
+        padding: p.padding,
+        depthMultiplier: 1,
+        activation: p.activation,
+        ...extra,
+      });
     case "maxpool":
       return tf.layers.maxPooling2d({ poolSize: +p.pool, strides: +p.pool, ...extra });
+    case "avgpool":
+      return tf.layers.averagePooling2d({ poolSize: +p.pool, strides: +p.pool, ...extra });
+    case "gmp":
+      return tf.layers.globalMaxPooling2d(extra);
+    case "layernorm":
+      return tf.layers.layerNormalization(extra);
+    case "activation":
+      return p.fn === "leakyrelu" ? tf.layers.leakyReLU({ alpha: 0.2, ...extra }) : tf.layers.activation({ activation: p.fn, ...extra });
     case "gap":
       return tf.layers.globalAveragePooling2d(extra);
     case "flatten":

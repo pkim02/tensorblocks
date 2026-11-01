@@ -81,13 +81,19 @@ export default function ModelPanel() {
             <IssueNote key={i} issue={issue} compact />
           ))}
 
-        <div className="split-btns">
-          <button className="btn outline" onClick={() => openCanvas()}>
-            블록 캔버스 열기
-          </button>
-          <button className="btn outline" onClick={() => setView("three")}>
-            3D로 보기
-          </button>
+        <div className="open-as">
+          <span className="small muted">모델 열어 보기</span>
+          <div className="split-btns">
+            <button className="btn outline" onClick={() => openCanvas()}>
+              블록
+            </button>
+            <button className="btn outline" onClick={() => setView("three")}>
+              3D
+            </button>
+            <button className="btn outline" onClick={() => setView("code")}>
+              Colab 코드
+            </button>
+          </div>
         </div>
 
         <details className="settings">

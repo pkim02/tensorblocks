@@ -8,7 +8,7 @@ import { fmtShape } from "../model/layers.js";
 
 export default function PreviewPanel() {
   const trained = useApp((s) => s.trained);
-  const setExportOpen = useApp((s) => s.setExportOpen);
+  const setView = useApp((s) => s.setView);
   const a = useAnalysis();
 
   return (
@@ -18,13 +18,8 @@ export default function PreviewPanel() {
           <h2 id="prev-h" className="step-h">
             미리보기
           </h2>
-          <button
-            className="btn outline small"
-            onClick={() => setExportOpen(true)}
-            disabled={!a.ok}
-            title={a.ok ? "PyTorch, Keras 코드로 내보내기" : "모델에 고칠 곳이 있으면 코드를 만들 수 없어요"}
-          >
-            코드 내보내기
+          <button className="btn outline small" onClick={() => setView("code")} title="Colab 노트북이나 PyTorch, Keras 코드로 가져가기">
+            Colab 코드
           </button>
         </div>
         {trained ? (

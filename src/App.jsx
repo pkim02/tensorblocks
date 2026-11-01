@@ -5,9 +5,9 @@ import Connectors from "./components/Connectors.jsx";
 import ModelPanel from "./components/ModelPanel.jsx";
 import PreviewPanel from "./components/PreviewPanel.jsx";
 import CanvasView from "./components/CanvasView.jsx";
-import ExportDialog from "./components/ExportDialog.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import ThreeView from "./components/ThreeView.jsx";
+import CodeView from "./components/CodeView.jsx";
 
 export default function App() {
   const view = useApp((s) => s.view);
@@ -16,6 +16,10 @@ export default function App() {
       {view === "three" ? (
         <ErrorBoundary>
           <ThreeView />
+        </ErrorBoundary>
+      ) : view === "code" ? (
+        <ErrorBoundary>
+          <CodeView />
         </ErrorBoundary>
       ) : view === "canvas" ? (
         <ErrorBoundary>
@@ -38,7 +42,6 @@ export default function App() {
           </main>
         </div>
       )}
-      <ExportDialog />
     </ReactFlowProvider>
   );
 }

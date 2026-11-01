@@ -16,6 +16,7 @@ import { useApp, useAnalysis } from "../store.js";
 import { LAYERS, PALETTE, fmtShape, fmtCount, torchLines, torchShape } from "../model/layers.js";
 import { TEMPLATES, NODE_W } from "../model/graph.js";
 import IssueNote from "./IssueNote.jsx";
+import ViewTabs from "./ViewTabs.jsx";
 
 const DRAG_TYPE = "application/x-tensorblock";
 
@@ -27,11 +28,9 @@ export default function CanvasView() {
   const onConnect = useApp((s) => s.onConnect);
   const select = useApp((s) => s.select);
   const addBlock = useApp((s) => s.addBlock);
-  const setView = useApp((s) => s.setView);
   const tidy = useApp((s) => s.tidy);
   const templateId = useApp((s) => s.templateId);
   const loadTemplate = useApp((s) => s.loadTemplate);
-  const setExportOpen = useApp((s) => s.setExportOpen);
   const training = useApp((s) => s.train.status === "training");
   const a = useAnalysis();
   const rf = useReactFlow();
@@ -97,11 +96,9 @@ export default function CanvasView() {
 
   return (
     <div className="canvas-view">
-      <header className="canvas-bar">
-        <button className="btn ghost small" onClick={() => setView("main")}>
-          ← 돌아가기
-        </button>
-        <h1 className="canvas-title">블록 캔버스</h1>
+      <header className="work-bar">
+        <ViewTabs />
+        <h1 className="visually-hidden">블록 캔버스</h1>
         {errors || warns ? (
           <button className={`badge badge-btn ${errors ? "danger" : "warning"}`} onClick={showProblem} role="status">
             {errors ? `고칠 곳 ${errors}개` : `주의 ${warns}개`} 보기
@@ -138,12 +135,6 @@ export default function CanvasView() {
           }}
         >
           한 줄로 정렬
-        </button>
-        <button className="btn outline small" onClick={() => setView("three")}>
-          3D로 보기
-        </button>
-        <button className="btn primary small" onClick={() => setExportOpen(true)} disabled={!a.ok}>
-          코드 보기
         </button>
       </header>
 
