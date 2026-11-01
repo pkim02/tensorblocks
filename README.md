@@ -2,6 +2,8 @@
 
 Teachable Machine처럼 쉽게 데이터를 모으고 학습시키되, 모델 속을 **블록으로 열어서 고치고**, 완성된 구조를 **바로 돌아가는 PyTorch / Keras 코드**로 가져가는 웹 앱이에요. (해커톤 주제: 안전, 교육)
 
+**바로 써 보기: https://tensorblocks.netlify.app** (설치 없이 브라우저에서 열려요. 웹캠은 https라서 바로 돼요.)
+
 ## 실행
 
 Node 20 이상이 필요해요.
@@ -46,6 +48,7 @@ npm run dev
 - `main`에 바로 올리지 말고 브랜치를 만들어서 PR로 합쳐요.
 - 올리기 전에 `npx prettier --write src`로 코드 모양을 맞춰요 (`.prettierrc`에 설정 있음).
 - 화면은 라이트 모드 전용이에요 (`index.html`의 `data-mode="light"`).
+- 배포: `npm run deploy` (Netlify HAPE 팀 로그인이 필요해요). GitHub에 push한다고 자동으로 배포되지는 않아요.
 
 ## 기술
 

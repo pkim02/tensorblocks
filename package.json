@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "deploy": "vite build && netlify deploy --prod --dir dist --no-build --site 2d7d3cc9-4d44-41cb-9420-1c9c43b2fe00"
   },
   "dependencies": {
     "@tensorflow/tfjs": "^4.22.0",
