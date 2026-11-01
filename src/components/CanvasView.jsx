@@ -1,8 +1,20 @@
-import { useCallback, useEffect } from "react";
-import { ReactFlow, Background, BackgroundVariant, Controls, Handle, Position, BaseEdge, EdgeLabelRenderer, getBezierPath, useReactFlow } from "@xyflow/react";
+import { useCallback, useEffect, useRef } from "react";
+import {
+  ReactFlow,
+  Background,
+  BackgroundVariant,
+  Controls,
+  MiniMap,
+  Handle,
+  Position,
+  BaseEdge,
+  EdgeLabelRenderer,
+  getBezierPath,
+  useReactFlow,
+} from "@xyflow/react";
 import { useApp, useAnalysis } from "../store.js";
 import { LAYERS, PALETTE, fmtShape, fmtCount, torchLines, torchShape } from "../model/layers.js";
-import { TEMPLATES } from "../model/graph.js";
+import { TEMPLATES, NODE_W } from "../model/graph.js";
 import IssueNote from "./IssueNote.jsx";
 
 const DRAG_TYPE = "application/x-tensorblock";
@@ -40,9 +52,36 @@ export default function CanvasView() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const fit = useCallback(() => setTimeout(() => rf.fitView({ padding: 0.25, duration: 200 }), 30), [rf]);
+  const flowRef = useRef(null);
 
-  // Re-frame when blocks are added or removed so the whole model stays in view.
+  // Frames the row at a readable size: the whole model if it fits, otherwise starting
+  // from the input with the rest a sideways pan away. Sits a little high so the
+  // correction notes hanging under a line have room.
+  const fit = useCallback(
+    () =>
+      setTimeout(() => {
+        const el = flowRef.current;
+        const ns = rf.getNodes();
+        if (!el || !ns.length) return;
+        const b = rf.getNodesBounds(ns);
+        const pad = 48;
+        const zoom = Math.max(0.8, Math.min(1, (el.clientWidth - 2 * pad) / b.width));
+        const fits = b.width * zoom <= el.clientWidth - 2 * pad;
+        const x = fits ? (el.clientWidth - b.width * zoom) / 2 - b.x * zoom : pad - b.x * zoom;
+        const y = el.clientHeight * 0.38 - (b.y + b.height / 2) * zoom;
+        rf.setViewport({ x, y, zoom }, { duration: 200 });
+      }, 60),
+    [rf],
+  );
+
+  // Pans to the first problem so it is never off-screen during a demo.
+  const showProblem = () => {
+    const issue = a.issues.find((i) => i.level === "error" && i.nodeId) || a.issues.find((i) => i.nodeId);
+    const n = issue && rf.getNode(issue.nodeId);
+    if (n) rf.setCenter(n.position.x, n.position.y + 120, { zoom: Math.max(rf.getZoom(), 0.9), duration: 300 });
+  };
+
+  // Re-frame when blocks are added or removed.
   const count = nodes.length;
   useEffect(() => {
     fit();
@@ -53,7 +92,7 @@ export default function CanvasView() {
     if (!type) return;
     e.preventDefault();
     const p = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY });
-    addBlock(type, { x: p.x - 120, y: p.y - 30 });
+    addBlock(type, { x: p.x - NODE_W / 2, y: p.y - 45 });
   };
 
   return (
@@ -63,9 +102,15 @@ export default function CanvasView() {
           ← 돌아가기
         </button>
         <h1 className="canvas-title">블록 캔버스</h1>
-        <span className={`badge ${errors ? "danger" : warns ? "warning" : "success"}`} role="status">
-          {errors ? `고칠 곳 ${errors}개` : warns ? `주의 ${warns}개` : "모양이 모두 맞아요"}
-        </span>
+        {errors || warns ? (
+          <button className={`badge badge-btn ${errors ? "danger" : "warning"}`} onClick={showProblem} role="status">
+            {errors ? `고칠 곳 ${errors}개` : `주의 ${warns}개`} 보기
+          </button>
+        ) : (
+          <span className="badge success" role="status">
+            모양이 모두 맞아요
+          </span>
+        )}
         <span className="small muted bar-params">
           학습할 값 <span className="num-inline">{fmtCount(a.trainableParams)}</span>개
         </span>
@@ -101,7 +146,7 @@ export default function CanvasView() {
 
       <div className="canvas-body">
         <Palette onAdd={(t) => addBlock(t)} />
-        <div className="flow" onDragOver={(e) => (e.preventDefault(), (e.dataTransfer.dropEffect = "copy"))} onDrop={onDrop}>
+        <div className="flow" ref={flowRef} onDragOver={(e) => (e.preventDefault(), (e.dataTransfer.dropEffect = "copy"))} onDrop={onDrop}>
           <ReactFlow
             nodes={nodes}
             edges={edges.map((e) => (training ? { ...e, className: "flowing" } : e))}
@@ -114,15 +159,15 @@ export default function CanvasView() {
             onPaneClick={() => select(null)}
             onEdgeClick={() => select(null)}
             deleteKeyCode={null}
-            fitView
-            fitViewOptions={{ padding: 0.25 }}
-            minZoom={0.3}
+            panOnScroll
+            minZoom={0.2}
             maxZoom={1.6}
-            colorMode="system"
+            colorMode="light"
             proOptions={{ hideAttribution: true }}
           >
             <Background variant={BackgroundVariant.Lines} gap={24} className="graph-paper" />
-            <Controls showInteractive={false} />
+            <Controls showInteractive={false} fitViewOptions={{ padding: 0.1 }} />
+            <MiniMap pannable zoomable ariaLabel="모델 전체 지도" nodeStrokeWidth={2} />
           </ReactFlow>
         </div>
         <Inspector />
@@ -171,21 +216,36 @@ function BlockNode({ id, data }) {
   const level = info.issue?.level;
   // Problems that belong to this block but have no incoming line to sit on.
   const extra = a.issues.filter((i) => i.nodeId === id && i !== info.issue);
-  const cls = ["block", `g-${def.group}`, selected && "selected", level === "error" && "has-error", info.detached && "detached", info.blocked && "blocked"];
+  const cls = [
+    "layer-block",
+    `g-${def.group}`,
+    selected && "selected",
+    level === "error" && "has-error",
+    info.detached && "detached",
+    info.blocked && "blocked",
+  ];
 
   return (
     <div className={cls.filter(Boolean).join(" ")}>
-      {data.type !== "input" && <Handle type="target" position={Position.Top} />}
+      {data.type !== "input" && <Handle type="target" position={Position.Left} />}
       <div className="block-head">
         <span className="block-name">{def.name}</span>
         <span className="block-ko">{def.exportOnly ? "코드 전용" : def.ko}</span>
       </div>
       <div className="block-sum">{def.summary(data.params, { numClasses: a.numClasses })}</div>
       <div className="block-foot">
-        {info.detached ? "연결 안 됨" : info.blocked ? "앞에서 막혔어요" : def.frozen ? `고정된 값 ${fmtCount(info.params)}` : info.params ? `학습할 값 ${fmtCount(info.params)}` : "학습할 값 없음"}
+        {info.detached
+          ? "연결 안 됨"
+          : info.blocked
+            ? "앞에서 막혔어요"
+            : def.frozen
+              ? `고정된 값 ${fmtCount(info.params)}`
+              : info.params
+                ? `학습할 값 ${fmtCount(info.params)}`
+                : "학습할 값 없음"}
         {data.type === "output" && info.outShape && <span className="mono"> → {fmtShape(info.outShape)}</span>}
       </div>
-      {data.type !== "output" && <Handle type="source" position={Position.Bottom} />}
+      {data.type !== "output" && <Handle type="source" position={Position.Right} />}
       {extra.map((issue, i) => (
         <IssueNote key={i} issue={issue} className="note-side nodrag" />
       ))}
@@ -198,7 +258,7 @@ function ShapeEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, tar
   const info = a.edgeInfo[id];
   const [path, lx, ly] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition });
   const level = info?.issue && !info.blocked ? info.issue.level : null;
-  const state = !info ? "idle" : level ?? (info.blocked ? "blocked" : "ok");
+  const state = !info ? "idle" : (level ?? (info.blocked ? "blocked" : "ok"));
 
   return (
     <>
@@ -207,7 +267,9 @@ function ShapeEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, tar
         <div className={`shape-tag tag-${state} nodrag nopan`} style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)` }}>
           {!info ? "연결 안 됨" : info.blocked ? "?" : fmtShape(info.shape)}
         </div>
-        {level && <IssueNote issue={info.issue} className="note-edge nodrag nopan" style={{ transform: `translate(${lx + 136}px, ${ly}px) translateY(-50%)` }} />}
+        {level && (
+          <IssueNote issue={info.issue} className="note-edge nodrag nopan" style={{ transform: `translate(-50%, 0) translate(${lx}px, ${ly + 66}px)` }} />
+        )}
       </EdgeLabelRenderer>
     </>
   );
@@ -251,7 +313,7 @@ function Inspector() {
         <ul className="small tips">
           <li>선 위의 글자는 그 선을 지나가는 데이터의 모양이에요. 64×64×16은 세로 64, 가로 64, 채널 16이라는 뜻이에요.</li>
           <li>모양이 안 맞으면 선이 빨개지고, 고치는 버튼이 나와요.</li>
-          <li>블록 아래 점에서 다음 블록 위 점으로 끌면 연결돼요.</li>
+          <li>블록 오른쪽 점에서 다음 블록 왼쪽 점으로 끌면 연결돼요.</li>
           <li>블록을 고르고 Delete 키를 누르면 지워지고, 앞뒤 블록이 다시 이어져요.</li>
         </ul>
       </aside>

@@ -47,9 +47,7 @@ export default function ExportDialog() {
   return (
     <dialog ref={ref} className="dialog export" closedby="any" onClose={() => setOpen(false)} aria-labelledby="export-h">
       <h2 id="export-h">코드 내보내기</h2>
-      <p className="small muted">
-        캔버스에서 계산한 모양 그대로 in_channels, in_features를 채워 넣었어요. 내 컴퓨터나 Colab에서 바로 돌아가요.
-      </p>
+      <p className="small muted">캔버스에서 계산한 모양 그대로 in_channels, in_features를 채워 넣었어요. 내 컴퓨터나 Colab에서 바로 돌아가요.</p>
       <div className="segmented" role="radiogroup" aria-label="프레임워크">
         <label>
           <input type="radio" name="lang" checked={lang === "torch"} onChange={() => setLang("torch")} /> PyTorch

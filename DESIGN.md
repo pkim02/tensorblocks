@@ -32,7 +32,7 @@ handwritten-style note says what's wrong and offers the fix button. Everything e
 
 ## Colors
 
-Accent is graph-paper green ink (hue 165). It marks the one primary action per view
+Light mode only (index.html pins `data-mode="light"`): a lab notebook is paper. Accent is graph-paper green ink (hue 165). It marks the one primary action per view
 (학습시키기, 블록 캔버스 열기), selected blocks and links. Red (kit danger) is reserved for shape
 errors only, so it always means "this connection is broken". Amber (kit warning) means
 "works but slow". OK connections are plain grey, never green, so green ink and "fine" don't blur.
@@ -77,6 +77,8 @@ preview. The block canvas opens full-screen from the model column.
 │                    │  [학습시키기]       │                    │
 └────────────────────────────────────────────────────────────┘
 Canvas: palette (left) · graph-paper canvas (centre) · inspector (right)
+On the canvas the model runs left to right: Input ─64×64×3─▶ Conv2D ─▶ … ─▶ Output.
+Correction notes hang under the broken line.
 ```
 
 ## Elevation & Depth

@@ -12,25 +12,30 @@ export default function PreviewPanel() {
   const a = useAnalysis();
 
   return (
-    <section className="col" aria-labelledby="prev-h">
-      <div className="col-head">
-        <h2 id="prev-h">3. 미리보기</h2>
-      </div>
-      {trained ? (
-        <Tester trained={trained} stale={trained.signature !== a.signature} />
-      ) : (
-        <div className="empty">
-          <h3>아직 학습한 모델이 없어요</h3>
-          <p>학습이 끝나면 여기서 웹캠이나 사진으로 바로 시험하고, 각 블록이 사진을 어떻게 보는지 들여다볼 수 있어요.</p>
+    <section className="lane" aria-labelledby="prev-h">
+      <div className="card step" data-port="preview">
+        <div className="step-head">
+          <h2 id="prev-h" className="step-h">
+            미리보기
+          </h2>
+          <button
+            className="btn outline small"
+            onClick={() => setExportOpen(true)}
+            disabled={!a.ok}
+            title={a.ok ? "PyTorch, Keras 코드로 내보내기" : "모델에 고칠 곳이 있으면 코드를 만들 수 없어요"}
+          >
+            코드 내보내기
+          </button>
         </div>
-      )}
-      <hr />
-      <h3 className="sub-h">코드로 가져가기</h3>
-      <p className="small muted">지금 캔버스의 모델을 그대로 PyTorch, Keras 학습 코드로 바꿔 줘요. 학습 전에도 받을 수 있어요.</p>
-      <button className="btn outline block" onClick={() => setExportOpen(true)} disabled={!a.ok}>
-        코드 내보내기
-      </button>
-      {!a.ok && <p className="hint small">모델에 고칠 곳이 있으면 코드를 만들 수 없어요.</p>}
+        {trained ? (
+          <Tester trained={trained} stale={trained.signature !== a.signature} />
+        ) : (
+          <p className="muted step-empty">
+            왼쪽에서 모델을 학습시키면 여기서 웹캠이나 사진으로 바로 시험하고, 블록마다 사진을 어떻게 보는지 들여다볼 수 있어요. 코드는 학습 전에도 내보낼 수
+            있어요.
+          </p>
+        )}
+      </div>
     </section>
   );
 }
@@ -93,7 +98,8 @@ function Tester({ trained, stale }) {
       </div>
 
       <div className="preview-frame">
-        {source === "cam" && (state === "error" ? <p className="callout danger small">{error}</p> : <video ref={videoRef} playsInline muted className="cam-video" />)}
+        {source === "cam" &&
+          (state === "error" ? <p className="callout danger small">{error}</p> : <video ref={videoRef} playsInline muted className="cam-video" />)}
         {source !== "cam" && still && <CanvasImage canvas={still} />}
         {source === "file" && !still && <p className="muted small">시험할 사진을 골라 주세요.</p>}
       </div>
@@ -148,9 +154,7 @@ function Inside({ trained, result }) {
       <ol className="inside-list" role="list">
         <li>
           <span className="inside-name">입력 사진</span>
-          <span className="inside-shape">
-            {trained.backbone ? "224×224×3" : `${trained.size}×${trained.size}×3`}
-          </span>
+          <span className="inside-shape">{trained.backbone ? "224×224×3" : `${trained.size}×${trained.size}×3`}</span>
           <div className="maps">
             <CanvasImage canvas={result.input} small />
           </div>
@@ -159,7 +163,9 @@ function Inside({ trained, result }) {
           <li key={r.nodeId}>
             <span className="inside-name">{trained.blockNames[r.nodeId]}</span>
             <span className="inside-shape">{r.kind === "maps" ? fmtShape([r.h, r.w, r.c]) : fmtShape([r.n])}</span>
-            <div className="maps">{r.kind === "maps" ? r.maps.map((m, i) => <MapTile key={i} data={m} w={r.w} h={r.h} />) : <VecStrip values={r.values} />}</div>
+            <div className="maps">
+              {r.kind === "maps" ? r.maps.map((m, i) => <MapTile key={i} data={m} w={r.w} h={r.h} />) : <VecStrip values={r.values} />}
+            </div>
           </li>
         ))}
       </ol>

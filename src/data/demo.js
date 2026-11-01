@@ -16,7 +16,8 @@ function draw(kind) {
     g.fillRect(rand(0, SAMPLE_SIZE), rand(0, SAMPLE_SIZE), rand(2, 8), rand(2, 8));
   }
   const r = rand(34, 66);
-  const x = rand(r + 6, SAMPLE_SIZE - r - 6), y = rand(r + 6, SAMPLE_SIZE - r - 6);
+  const x = rand(r + 6, SAMPLE_SIZE - r - 6),
+    y = rand(r + 6, SAMPLE_SIZE - r - 6);
   g.fillStyle = `hsl(${rand(0, 360)} ${rand(45, 80)}% ${rand(25, 50)}%)`;
   g.translate(x, y);
   g.rotate(rand(-0.6, 0.6));

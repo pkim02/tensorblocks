@@ -53,7 +53,11 @@ export function useWebcam(on) {
       .catch((e) => {
         users = Math.max(0, users - 1);
         if (cancelled) return;
-        setError(e?.name === "NotAllowedError" ? "카메라 권한이 막혀 있어요. 주소창 옆 카메라 아이콘에서 허용해 주세요." : "카메라를 켤 수 없어요. 다른 앱이 쓰고 있지 않은지 확인해 주세요.");
+        setError(
+          e?.name === "NotAllowedError"
+            ? "카메라 권한이 막혀 있어요. 주소창 옆 카메라 아이콘에서 허용해 주세요."
+            : "카메라를 켤 수 없어요. 다른 앱이 쓰고 있지 않은지 확인해 주세요.",
+        );
         setState("error");
       });
     return () => {

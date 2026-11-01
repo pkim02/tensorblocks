@@ -9,7 +9,8 @@ export function toSquareCanvas(source, srcW, srcH, { mirror = false } = {}) {
   c.width = c.height = SAMPLE_SIZE;
   const ctx = c.getContext("2d", { willReadFrequently: true });
   const side = Math.min(srcW, srcH);
-  const sx = (srcW - side) / 2, sy = (srcH - side) / 2;
+  const sx = (srcW - side) / 2,
+    sy = (srcH - side) / 2;
   if (mirror) {
     ctx.translate(SAMPLE_SIZE, 0);
     ctx.scale(-1, 1);

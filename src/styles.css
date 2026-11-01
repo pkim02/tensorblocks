@@ -1,4 +1,5 @@
-/* TensorBlocks skin + page styles. Kit lives in public/kit (layered), so this file wins. */
+/* TensorBlocks skin + page styles. Kit lives in public/kit (layered), so this file wins.
+   Light mode only: index.html pins <html data-mode="light">. */
 
 :root {
   --accent-h: 165;
@@ -18,18 +19,7 @@
   --series-1: #2a78d6;
   --series-2: #eb6834;
   --grid-line: oklch(0.88 0.012 165);
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-mode="light"]) {
-    --series-1: #3987e5;
-    --series-2: #d95926;
-    --grid-line: oklch(0.29 0.012 165);
-  }
-}
-[data-mode="dark"] {
-  --series-1: #3987e5;
-  --series-2: #d95926;
-  --grid-line: oklch(0.29 0.012 165);
+  --paper-line: oklch(0.94 0.01 165);
 }
 
 body { background: var(--page); color: var(--text); }
@@ -37,34 +27,44 @@ body { background: var(--page); color: var(--text); }
 .mono, .num-inline { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .error-text { color: var(--danger-11); font-weight: 700; font-size: var(--step--1); }
 
-/* ── Main screen ─────────────────────────────────────── */
-.app { width: min(100% - 2rem, 88rem); margin-inline: auto; padding-block: var(--space-5) var(--space-8); }
-.topbar { margin-bottom: var(--space-6); }
+/* ── Main screen: left to right, like Teachable Machine ─ */
+body:has(.app) {
+  background-color: var(--gray-2);
+  background-image:
+    linear-gradient(var(--paper-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--paper-line) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+.app { width: min(100% - 2rem, 96rem); margin-inline: auto; padding-block: var(--space-5) var(--space-8); }
+.topbar { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-3) var(--space-5); margin-bottom: var(--space-6); }
 .brand { font-size: var(--step-3); margin: 0 0 var(--space-1); }
 .tagline { color: var(--text-muted); margin: 0; max-width: 60ch; }
 
-.columns {
+.flow-main {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--space-6);
-  align-items: start;
+  grid-template-columns: minmax(14rem, 1.3fr) minmax(14rem, 22rem) minmax(13rem, 24rem);
+  column-gap: clamp(2.5rem, 5vw, 5rem);
+  align-items: center;
 }
-.col { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
-.col + .col { border-inline-start: 1px solid var(--border); padding-inline-start: var(--space-6); }
-.col-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
-.col-head h2 { font-size: var(--step-2); margin: 0; }
-.col-lead { margin: 0; color: var(--text-muted); font-size: var(--step--1); }
-.col > * { margin-block: 0; }
+.lane { position: relative; z-index: 1; min-width: 0; }
+.step { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-5); }
+.step > * { margin-block: 0; }
+.step-h { font-size: var(--step-2); margin: 0; }
+.step-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.step-empty { margin: 0; font-size: var(--step--1); }
 .sub-h { font-size: var(--step-1); margin: 0; }
-.col hr { margin: var(--space-2) 0; }
 
-@media (max-width: 68rem) {
-  .columns { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .col:nth-child(3) { grid-column: 1 / -1; border-inline-start: 0; padding-inline-start: 0; border-top: 1px solid var(--border); padding-top: var(--space-5); }
+.connectors { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: 0; }
+.connectors .link { fill: none; stroke: var(--gray-8); stroke-width: 1.5; }
+.connectors.flowing .data-link { stroke: var(--accent-9); stroke-dasharray: 6 5; animation: flow 0.5s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .connectors.flowing .data-link { animation: none; }
 }
-@media (max-width: 44rem) {
-  .columns { grid-template-columns: minmax(0, 1fr); }
-  .col + .col { border-inline-start: 0; padding-inline-start: 0; border-top: 1px solid var(--border); padding-top: var(--space-5); }
+
+/* Phones: stack the steps, no lines. */
+@media (max-width: 48rem) {
+  .flow-main { grid-template-columns: minmax(0, 1fr); row-gap: var(--space-5); }
 }
 
 /* Class cards */
@@ -302,12 +302,19 @@ body { background: var(--page); color: var(--text); }
   --xy-controls-button-color: var(--text);
   --xy-controls-button-border-color: var(--border);
   --xy-node-boxshadow-selected: none;
+  --xy-minimap-background-color: var(--surface);
+  --xy-minimap-mask-background-color: oklch(0.5 0.01 165 / 0.12);
+  --xy-minimap-node-background-color: var(--gray-5);
+  --xy-minimap-node-stroke-color: var(--gray-9);
 }
+.flow .react-flow__minimap { border: 1px solid var(--border); border-radius: var(--radius-control); overflow: hidden; }
+.badge-btn { border: 0; cursor: pointer; font: inherit; font-size: var(--step--1); }
+.badge-btn:hover { text-decoration: underline; }
 .flow .react-flow__node { font-family: var(--font-body); }
 .flow .react-flow__handle { width: 10px; height: 10px; border-width: 2px; }
 
-.block {
-  width: 240px;
+.layer-block {
+  width: 196px; /* = NODE_W in src/model/graph.js */
   padding: var(--space-2) var(--space-3);
   background: var(--surface);
   color: var(--text);
@@ -315,17 +322,17 @@ body { background: var(--page); color: var(--text); }
   border-radius: var(--radius-surface);
   font-size: var(--step--1);
 }
-.block.g-pretrained { background: var(--sunken); }
-.block.selected { border-color: var(--accent-9); outline: 2px solid var(--accent-9); outline-offset: -1px; }
-.block.has-error { border-color: var(--danger-9); outline: 2px solid var(--danger-9); outline-offset: -1px; }
-.block.detached { border-style: dashed; opacity: 0.75; }
-.block.blocked { opacity: 0.6; }
-.block-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-2); }
+.layer-block.g-pretrained { background: var(--sunken); }
+.layer-block.selected { border-color: var(--accent-9); outline: 2px solid var(--accent-9); outline-offset: -1px; }
+.layer-block.has-error { border-color: var(--danger-9); outline: 2px solid var(--danger-9); outline-offset: -1px; }
+.layer-block.detached { border-style: dashed; opacity: 0.75; }
+.layer-block.blocked { opacity: 0.6; }
+.block-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 0 var(--space-2); }
 .block-name { font-weight: 700; font-size: var(--step-0); }
 .block-ko { color: var(--text-muted); font-size: 12px; }
 .block-sum { margin-top: 2px; }
 .block-foot { margin-top: var(--space-1); color: var(--text-muted); font-size: 12px; }
-.note-side { position: absolute; left: calc(100% + 16px); top: 0; cursor: default; z-index: 5; }
+.note-side { position: absolute; left: 0; top: calc(100% + 16px); cursor: default; z-index: 5; }
 
 .react-flow__edge-path.edge-ok { stroke: var(--border-strong); stroke-width: 1.5; }
 .react-flow__edge-path.edge-idle, .react-flow__edge-path.edge-blocked { stroke: var(--gray-8); stroke-dasharray: 4 4; }

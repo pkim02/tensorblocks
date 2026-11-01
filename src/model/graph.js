@@ -3,7 +3,9 @@
 // runtime errors.
 import { LAYERS } from "./layers.js";
 
-export const GAP_Y = 128;
+// Blocks sit in one row, left to right. NODE_W must match .layer-block width in styles.css.
+export const NODE_W = 196;
+export const GAP_X = NODE_W + 100;
 
 let uid = 0;
 export const newId = (prefix = "n") => `${prefix}${Date.now().toString(36)}${(uid++).toString(36)}`;
@@ -20,9 +22,9 @@ export function makeNode(type, position, params) {
 
 export const makeEdge = (source, target) => ({ id: newId("e"), source, target, type: "shape" });
 
-// A template is a list of [type, params]. Lays it out top to bottom and wires it up.
+// A template is a list of [type, params]. Lays it out left to right and wires it up.
 export function buildChain(spec, origin = { x: 0, y: 0 }) {
-  const nodes = spec.map(([type, params], i) => makeNode(type, { x: origin.x, y: origin.y + i * GAP_Y }, params));
+  const nodes = spec.map(([type, params], i) => makeNode(type, { x: origin.x + i * GAP_X, y: origin.y }, params));
   const edges = nodes.slice(1).map((n, i) => makeEdge(nodes[i].id, n.id));
   return { nodes, edges };
 }
@@ -101,7 +103,12 @@ function analyzeUncached(nodes, edges, numClasses) {
 
   const inputs = nodes.filter((n) => n.data.type === "input");
   if (inputs.length === 0) {
-    r.issues.push({ level: "error", title: "입력이 없어요", text: "'이미지 입력' 블록부터 놓아 주세요.", fixes: [{ label: "이미지 입력 추가", action: { kind: "addInput" } }] });
+    r.issues.push({
+      level: "error",
+      title: "입력이 없어요",
+      text: "'이미지 입력' 블록부터 놓아 주세요.",
+      fixes: [{ label: "이미지 입력 추가", action: { kind: "addInput" } }],
+    });
     markDetached(r, nodes);
     return r;
   }
@@ -114,7 +121,12 @@ function analyzeUncached(nodes, edges, numClasses) {
 
   while (cur) {
     if (seen.has(cur.id)) {
-      r.issues.push({ level: "error", title: "고리가 생겼어요", text: "블록 연결이 한 바퀴 돌아 제자리로 와요. 위에서 아래로 한 줄로 이어 주세요.", fixes: [] });
+      r.issues.push({
+        level: "error",
+        title: "고리가 생겼어요",
+        text: "블록 연결이 한 바퀴 돌아 제자리로 와요. 위에서 아래로 한 줄로 이어 주세요.",
+        fixes: [],
+      });
       blocked = true;
       break;
     }
@@ -151,7 +163,13 @@ function analyzeUncached(nodes, edges, numClasses) {
 
     const nextEdges = outs.get(cur.id) || [];
     if (nextEdges.length > 1) {
-      r.issues.push({ level: "warn", title: "갈래가 있어요", text: "아직은 한 줄 모델만 학습할 수 있어요. 첫 번째 연결만 따라가요.", nodeId: cur.id, fixes: [] });
+      r.issues.push({
+        level: "warn",
+        title: "갈래가 있어요",
+        text: "아직은 한 줄 모델만 학습할 수 있어요. 첫 번째 연결만 따라가요.",
+        nodeId: cur.id,
+        fixes: [],
+      });
     }
     if (cur.data.type === "output" && nextEdges.length) {
       r.issues.push({ level: "error", title: "출력 뒤에 블록이 있어요", text: "'분류 출력'은 맨 끝에 와야 해요.", nodeId: cur.id, fixes: [] });
@@ -175,7 +193,13 @@ function analyzeUncached(nodes, edges, numClasses) {
   }
   for (const n of r.chain.slice(1)) {
     if (byId.get(n).data.type === "input") {
-      r.issues.push({ level: "error", title: "입력이 두 번 나와요", text: "'이미지 입력'은 맨 처음에 한 번만 와요.", nodeId: n, fixes: [{ label: "이 블록 지우기", action: { kind: "remove" } }] });
+      r.issues.push({
+        level: "error",
+        title: "입력이 두 번 나와요",
+        text: "'이미지 입력'은 맨 처음에 한 번만 와요.",
+        nodeId: n,
+        fixes: [{ label: "이 블록 지우기", action: { kind: "remove" } }],
+      });
     }
   }
 

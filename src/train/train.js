@@ -4,8 +4,7 @@
 import * as tf from "@tensorflow/tfjs";
 
 // The exact weights Teachable Machine loads (MobileNetV2, alpha 0.35, 224px, no top).
-const MOBILENET_URL =
-  "https://storage.googleapis.com/teachable-machine-models/mobilenet_v2_weights_tf_dim_ordering_tf_kernels_0.35_224_no_top/model.json";
+const MOBILENET_URL = "https://storage.googleapis.com/teachable-machine-models/mobilenet_v2_weights_tf_dim_ordering_tf_kernels_0.35_224_no_top/model.json";
 
 let mobilenet = null;
 export async function loadMobileNet() {
@@ -99,7 +98,17 @@ export async function trainModel({ chainNodes, classes, settings, onStatus, onEp
     await tf.nextFrame();
     xs = tf.tidy(() => tf.concat(samples.map(({ s }) => toInput(s.canvas, { size }))));
   }
-  const ys = tf.tidy(() => tf.oneHot(tf.tensor1d(samples.map((x) => x.label), "int32"), numClasses).toFloat());
+  const ys = tf.tidy(() =>
+    tf
+      .oneHot(
+        tf.tensor1d(
+          samples.map((x) => x.label),
+          "int32",
+        ),
+        numClasses,
+      )
+      .toFloat(),
+  );
 
   const nVal = samples.length >= 20 ? Math.max(numClasses, Math.round(samples.length * 0.15)) : 0;
   const nTrain = samples.length - nVal;
@@ -180,7 +189,8 @@ function summarize(t) {
     // Show the channels that reacted most to this picture.
     const { indices } = tf.topk(m.mean([0, 1]), k);
     const picked = tf.gather(m, indices, 2).transpose([2, 0, 1]);
-    const min = picked.min([1, 2], true), max = picked.max([1, 2], true);
+    const min = picked.min([1, 2], true),
+      max = picked.max([1, 2], true);
     const norm = picked.sub(min).div(max.sub(min).add(1e-6));
     const data = norm.dataSync();
     const maps = Array.from({ length: k }, (_, i) => data.slice(i * h * w, (i + 1) * h * w));

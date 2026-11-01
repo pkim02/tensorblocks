@@ -4,29 +4,32 @@ import { useWebcam } from "../data/webcam.js";
 import { filesToSamples, grabFrame, makeSample } from "../data/images.js";
 import { makeShapesDataset } from "../data/demo.js";
 
-export default function DataPanel() {
-  const classes = useApp((s) => s.classes);
-  const addClass = useApp((s) => s.addClass);
-  const setClasses = useApp((s) => s.setClasses);
-  const total = classes.reduce((n, c) => n + c.samples.length, 0);
-
-  // No confirm box (embedded browsers auto-answer them); the toast offers an undo instead.
+// No confirm box (embedded browsers auto-answer them); the toast offers an undo instead.
+export function DemoButton() {
   const loadDemo = () => {
+    const { classes, setClasses } = useApp.getState();
     const before = classes;
+    const total = classes.reduce((n, c) => n + c.samples.length, 0);
     setClasses(makeShapesDataset(40));
     useApp.setState({ demoData: true });
     window.kit?.toast("예제 도형 120장을 불러왔어요", total > 0 ? { action: "되돌리기", onAction: () => setClasses(before) } : undefined);
   };
+  return (
+    <button className="btn outline small" onClick={loadDemo}>
+      예제 도형 불러오기
+    </button>
+  );
+}
+
+export default function DataPanel() {
+  const classes = useApp((s) => s.classes);
+  const addClass = useApp((s) => s.addClass);
 
   return (
-    <section className="col" aria-labelledby="data-h">
-      <div className="col-head">
-        <h2 id="data-h">1. 데이터</h2>
-        <button className="btn ghost small" onClick={loadDemo}>
-          예제 도형 불러오기
-        </button>
-      </div>
-      <p className="col-lead">클래스마다 사진을 모아요. 웹캠 버튼을 누른 채로 있으면 계속 찍혀요.</p>
+    <section className="lane lane-data" aria-labelledby="data-h">
+      <h2 id="data-h" className="visually-hidden">
+        데이터
+      </h2>
       <div className="stack">
         {classes.map((c) => (
           <ClassCard key={c.id} cls={c} canDelete={classes.length > 2} />
@@ -59,7 +62,7 @@ function ClassCard({ cls, canDelete }) {
   };
 
   return (
-    <article className="card class-card">
+    <article className="card class-card" data-port="class">
       <div className="class-head">
         <input className="class-name" value={cls.name} onChange={(e) => renameClass(cls.id, e.target.value)} aria-label="클래스 이름" />
         <button className="btn ghost small" commandfor={menuId} command="toggle-popover">

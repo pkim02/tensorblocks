@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { applyNodeChanges, applyEdgeChanges } from "@xyflow/react";
 import { LAYERS } from "./model/layers.js";
-import { analyze, buildChain, makeEdge, makeNode, newId, TEMPLATES, GAP_Y } from "./model/graph.js";
+import { analyze, buildChain, makeEdge, makeNode, newId, TEMPLATES, GAP_X, NODE_W } from "./model/graph.js";
 
 const newClass = (name) => ({ id: newId("c"), name, samples: [] });
 
@@ -80,7 +80,7 @@ export const useApp = create((set, get) => ({
   appendAfter: (nodeId, type) => {
     const s = get();
     const from = s.nodes.find((n) => n.id === nodeId);
-    const node = makeNode(type, { x: from.position.x, y: from.position.y + GAP_Y });
+    const node = makeNode(type, { x: from.position.x + GAP_X, y: from.position.y });
     const outs = s.edges.filter((e) => e.source === nodeId);
     set({
       nodes: [...s.nodes, node],
@@ -106,7 +106,10 @@ export const useApp = create((set, get) => ({
   removeEdge: (edgeId) => set((s) => ({ templateId: null, edges: s.edges.filter((e) => e.id !== edgeId) })),
 
   setParam: (nodeId, key, value) =>
-    set((s) => ({ templateId: null, nodes: s.nodes.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, params: { ...n.data.params, [key]: value } } } : n)) })),
+    set((s) => ({
+      templateId: null,
+      nodes: s.nodes.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, params: { ...n.data.params, [key]: value } } } : n)),
+    })),
 
   replaceNode: (nodeId, type) =>
     set((s) => ({ templateId: null, nodes: s.nodes.map((n) => (n.id === nodeId ? { ...n, data: { type, params: { ...LAYERS[type].defaults } } } : n)) })),
@@ -137,8 +140,8 @@ export const useApp = create((set, get) => ({
         get().appendAfter(nodeId, action.type);
         break;
       case "addInput": {
-        const top = Math.min(0, ...s.nodes.map((n) => n.position.y)) - GAP_Y;
-        const input = makeNode("input", { x: 0, y: top });
+        const left = Math.min(0, ...s.nodes.map((n) => n.position.x)) - GAP_X;
+        const input = makeNode("input", { x: left, y: 0 });
         const first = s.nodes.find((n) => !s.edges.some((e) => e.target === n.id));
         set({ nodes: [...s.nodes, input], edges: first ? [...s.edges, makeEdge(input.id, first.id)] : s.edges });
         get().tidy();
@@ -147,7 +150,7 @@ export const useApp = create((set, get) => ({
     }
   },
 
-  // Lines the connected blocks up in one column under the input.
+  // Lines the connected blocks up in one row to the right of the input.
   tidy: () => {
     const s = get();
     const a = analyze(s.nodes, s.edges, s.classes.length);
@@ -155,9 +158,7 @@ export const useApp = create((set, get) => ({
     if (!head) return;
     const order = new Map(a.chain.map((id, i) => [id, i]));
     set({
-      nodes: s.nodes.map((n) =>
-        order.has(n.id) ? { ...n, position: { x: head.position.x, y: head.position.y + order.get(n.id) * GAP_Y } } : n,
-      ),
+      nodes: s.nodes.map((n) => (order.has(n.id) ? { ...n, position: { x: head.position.x + order.get(n.id) * GAP_X, y: head.position.y } } : n)),
     });
   },
 
@@ -185,18 +186,20 @@ export const useAnalysis = () => {
   return analyze(nodes, edges, n);
 };
 
-// Blocks are 240 wide; an edge runs from the bottom middle of one to the top middle of the next.
-const NODE_W = 240;
+// An edge runs from the right middle of one block to the left middle of the next.
 function nearestEdge(s, pos) {
   const byId = new Map(s.nodes.map((n) => [n.id, n]));
-  const p = { x: pos.x + NODE_W / 2, y: pos.y + 30 };
+  const p = { x: pos.x + NODE_W / 2, y: pos.y + 45 };
   let best = null;
   let bestD = 70;
   for (const e of s.edges) {
-    const a = byId.get(e.source), b = byId.get(e.target);
+    const a = byId.get(e.source),
+      b = byId.get(e.target);
     if (!a || !b) continue;
-    const ax = a.position.x + NODE_W / 2, ay = a.position.y + (a.measured?.height ?? 80);
-    const bx = b.position.x + NODE_W / 2, by = b.position.y;
+    const ax = a.position.x + NODE_W,
+      ay = a.position.y + (a.measured?.height ?? 90) / 2;
+    const bx = b.position.x,
+      by = b.position.y + (b.measured?.height ?? 90) / 2;
     const d = distToSegment(p.x, p.y, ax, ay, bx, by);
     if (d < bestD) {
       bestD = d;
@@ -207,7 +210,8 @@ function nearestEdge(s, pos) {
 }
 
 function distToSegment(px, py, ax, ay, bx, by) {
-  const dx = bx - ax, dy = by - ay;
+  const dx = bx - ax,
+    dy = by - ay;
   const len = dx * dx + dy * dy || 1;
   const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len));
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));

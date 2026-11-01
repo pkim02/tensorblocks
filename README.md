@@ -41,6 +41,12 @@ npm run dev
 | `DESIGN.md` | 디자인 방향 (색, 글꼴, 레이아웃, 해도 되는 것과 안 되는 것) |
 | `public/kit/` | 공용 UI 키트 (직접 고치지 말고 `src/styles.css`에서 덮어쓰기) |
 
+## 같이 작업할 때
+
+- `main`에 바로 올리지 말고 브랜치를 만들어서 PR로 합쳐요.
+- 올리기 전에 `npx prettier --write src`로 코드 모양을 맞춰요 (`.prettierrc`에 설정 있음).
+- 화면은 라이트 모드 전용이에요 (`index.html`의 `data-mode="light"`).
+
 ## 기술
 
 React 19 + Vite, [React Flow](https://reactflow.dev) (블록 캔버스), TensorFlow.js (브라우저 학습), JSZip.

@@ -51,9 +51,7 @@ export function pytorchCode(analysis, nodes, classes, settings) {
     : ["self.layers = nn.Sequential(", ...pad(body, 4), ")"];
 
   const forward = hasBackbone ? ["return self.head(self.backbone(x))"] : ["return self.layers(x)"];
-  const normalize = hasBackbone
-    ? '    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),  # ImageNet 기준으로 맞추기\n'
-    : "";
+  const normalize = hasBackbone ? "    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),  # ImageNet 기준으로 맞추기\n" : "";
 
   return `"""
 TensorBlocks에서 만든 모델을 그대로 옮긴 PyTorch 학습 코드예요.
@@ -145,7 +143,11 @@ export function kerasCode(analysis, nodes, classes, settings) {
   if (hasBackbone && backbone === "mobilenet") {
     layersOut.push("layers.Lambda(keras.applications.mobilenet_v2.preprocess_input),", "base,  # → 7×7×1280");
   } else if (hasBackbone) {
-    layersOut.push("# ResNet-18은 Keras에 기본으로 없어서 ResNet50으로 바꿔 넣었어요 (출력 7×7×2048).", "layers.Lambda(keras.applications.resnet.preprocess_input),", "base,");
+    layersOut.push(
+      "# ResNet-18은 Keras에 기본으로 없어서 ResNet50으로 바꿔 넣었어요 (출력 7×7×2048).",
+      "layers.Lambda(keras.applications.resnet.preprocess_input),",
+      "base,",
+    );
   } else {
     layersOut.push("layers.Rescaling(1.0 / 255),");
   }

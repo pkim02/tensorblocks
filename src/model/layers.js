@@ -2,8 +2,7 @@
 // and how it is written in TF.js / PyTorch / Keras.
 // Shapes are channels-last arrays: [H, W, C] for images, [N] for vectors.
 
-export const fmtShape = (s) =>
-  !s ? "?" : s.length === 1 ? s[0].toLocaleString("en-US") : s.join("×");
+export const fmtShape = (s) => (!s ? "?" : s.length === 1 ? s[0].toLocaleString("en-US") : s.join("×"));
 
 export const fmtCount = (n = 0) => {
   if (n >= 1e6) return `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M`;
@@ -133,8 +132,7 @@ export const LAYERS = {
     fields: [],
     pretrained: true,
     exportOnly: true,
-    about:
-      "마이크로소프트 연구팀이 만든 유명한 이미지 모델이에요. 브라우저에서 돌리기엔 무거워서, PyTorch 코드로 내보내 내 컴퓨터에서 학습해요.",
+    about: "마이크로소프트 연구팀이 만든 유명한 이미지 모델이에요. 브라우저에서 돌리기엔 무거워서, PyTorch 코드로 내보내 내 컴퓨터에서 학습해요.",
     summary: () => "코드 내보내기 전용",
     infer: (inShape, _, ctx) => {
       if (!is3D(inShape)) return { error: needsImage("ResNet-18", inShape) };
@@ -182,9 +180,11 @@ export const LAYERS = {
     infer: (inShape, p) => {
       if (!is3D(inShape)) return { error: needsImage("Conv2D", inShape) };
       const [h, w] = inShape;
-      const k = +p.kernel, s = +p.stride;
+      const k = +p.kernel,
+        s = +p.stride;
       const size = (n) => (p.padding === "same" ? Math.ceil(n / s) : Math.floor((n - k) / s) + 1);
-      const oh = size(h), ow = size(w);
+      const oh = size(h),
+        ow = size(w);
       if (oh < 1 || ow < 1) {
         const fixes = p.padding === "valid" ? [{ label: "가장자리를 same으로", action: { kind: "setParam", key: "padding", value: "same" } }] : [];
         return { error: tooSmall("Conv2D", inShape, fixes) };
@@ -213,7 +213,8 @@ export const LAYERS = {
     infer: (inShape, p) => {
       if (!is3D(inShape)) return { error: needsImage("MaxPool2D", inShape) };
       const [h, w, c] = inShape;
-      const oh = Math.floor(h / p.pool), ow = Math.floor(w / p.pool);
+      const oh = Math.floor(h / p.pool),
+        ow = Math.floor(w / p.pool);
       if (oh < 1 || ow < 1) return { error: tooSmall("MaxPool2D", inShape) };
       return { out: [oh, ow, c] };
     },
