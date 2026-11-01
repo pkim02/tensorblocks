@@ -1,0 +1,171 @@
+/* UI kit · tokens.css
+   Bones (shared by every project) + the default skin.
+   A project changes the look by overriding the "Skin" variables only.
+   Everything below "Derived" is computed from them — don't override those. */
+
+@layer kit.reset, kit.tokens, kit.skins, kit.base, kit.components, kit.utilities;
+
+@layer kit.tokens {
+  :root {
+    /* ── Skin ───────────────────────────────────────────── */
+    --font-body: "Atkinson Hyperlegible Next", "IBM Plex Sans KR", system-ui, sans-serif;
+    --font-display: var(--font-body);
+    --font-mono: "Atkinson Hyperlegible Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --heading-weight: 700;
+    --heading-tracking: -0.01em;
+
+    --neutral-h: 250;          /* grey tint hue */
+    --neutral-c: 0.008;        /* grey tint strength (0 = pure grey) */
+    --accent-h: 245;           /* accent hue */
+    --accent-c: 0.13;          /* accent strength */
+    --accent-solid-l: 0.52;    /* lightness of solid accent fills */
+    --on-accent: oklch(1 0 0); /* text on solid accent fills */
+
+    --radius-control: 6px;
+    --radius-surface: 10px;
+    --radius-float: 10px;
+    --border-w: 1px;
+    --btn-border: transparent;
+    --btn-shadow: none;
+    --btn-shadow-pressed: none;
+    --btn-press: 0px;
+
+    /* ── Bones: spacing (4px steps) ─────────────────────── */
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.5rem;
+    --space-6: 2rem;
+    --space-7: 3rem;
+    --space-8: 4rem;
+    --space-9: 6rem;
+
+    /* ── Bones: fluid type, 320px → 1280px ─────────────── */
+    --step--1: clamp(0.8125rem, 0.7917rem + 0.1042vw, 0.875rem);
+    --step-0: clamp(1rem, 0.9792rem + 0.1042vw, 1.0625rem);
+    --step-1: clamp(1.1875rem, 1.1458rem + 0.2083vw, 1.3125rem);
+    --step-2: clamp(1.375rem, 1.2917rem + 0.4167vw, 1.625rem);
+    --step-3: clamp(1.625rem, 1.4583rem + 0.8333vw, 2.125rem);
+    --step-4: clamp(1.9375rem, 1.6458rem + 1.4583vw, 2.8125rem);
+    --step-5: clamp(2.25rem, 1.75rem + 2.5vw, 3.75rem);
+    --leading: 1.6;
+    --leading-tight: 1.2;
+
+    /* ── Bones: controls and motion ─────────────────────── */
+    --control-h: 2.5rem;
+    --control-h-sm: 2rem;
+    --control-h-lg: 3rem;
+    --control-text: 0.9375rem;
+    --solid-shift: -0.04;      /* hover on solid fills: always darker, keeps text contrast */
+    --dur-fast: 120ms;
+    --dur: 180ms;
+    --ease: cubic-bezier(0.2, 0, 0, 1);
+    --shadow-ink: oklch(0.2 0.02 var(--neutral-h));
+
+    /* ── Bones: light-mode lightness ramp ───────────────── */
+    --l1: 0.993; --l2: 0.982; --l3: 0.958; --l4: 0.935; --l5: 0.912; --l6: 0.885;
+    --l7: 0.845; --l8: 0.78; --lg9: 0.62; --l11: 0.48; --l12: 0.27;
+    --l-float: 1;
+    --hover-shift: -0.05;
+    --shadow-float: 0 1px 2px oklch(0 0 0 / 0.06), 0 12px 32px -8px oklch(0 0 0 / 0.2);
+    color-scheme: light;
+  }
+
+  @media (pointer: coarse) {
+    :root { --control-h: 2.75rem; --control-h-sm: 2.25rem; }
+  }
+
+  /* Dark ramp: follows the system unless data-mode forces a mode. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-mode="light"]) {
+      --l1: 0.17; --l2: 0.2; --l3: 0.24; --l4: 0.27; --l5: 0.3; --l6: 0.34;
+      --l7: 0.4; --l8: 0.48; --lg9: 0.55; --l11: 0.8; --l12: 0.94;
+      --l-float: 0.23;
+      --hover-shift: 0.05;
+      --shadow-float: 0 0 0 1px oklch(1 0 0 / 0.06), 0 12px 32px -8px oklch(0 0 0 / 0.7);
+      color-scheme: dark;
+    }
+  }
+  [data-mode="dark"] {
+    --l1: 0.17; --l2: 0.2; --l3: 0.24; --l4: 0.27; --l5: 0.3; --l6: 0.34;
+    --l7: 0.4; --l8: 0.48; --lg9: 0.55; --l11: 0.8; --l12: 0.94;
+    --l-float: 0.23;
+    --hover-shift: 0.05;
+    --shadow-float: 0 0 0 1px oklch(1 0 0 / 0.06), 0 12px 32px -8px oklch(0 0 0 / 0.7);
+    color-scheme: dark;
+  }
+  [data-mode="light"] {
+    --l1: 0.993; --l2: 0.982; --l3: 0.958; --l4: 0.935; --l5: 0.912; --l6: 0.885;
+    --l7: 0.845; --l8: 0.78; --lg9: 0.62; --l11: 0.48; --l12: 0.27;
+    --l-float: 1;
+    --hover-shift: -0.05;
+    --shadow-float: 0 1px 2px oklch(0 0 0 / 0.06), 0 12px 32px -8px oklch(0 0 0 / 0.2);
+    color-scheme: light;
+  }
+
+  /* ── Derived: recomputed wherever a skin or mode is set ── */
+  :root, [data-skin], [data-mode] {
+    --gray-1: oklch(var(--l1) calc(var(--neutral-c) * 0.2) var(--neutral-h));
+    --gray-2: oklch(var(--l2) calc(var(--neutral-c) * 0.25) var(--neutral-h));
+    --gray-3: oklch(var(--l3) calc(var(--neutral-c) * 0.5) var(--neutral-h));
+    --gray-4: oklch(var(--l4) calc(var(--neutral-c) * 0.55) var(--neutral-h));
+    --gray-5: oklch(var(--l5) calc(var(--neutral-c) * 0.6) var(--neutral-h));
+    --gray-6: oklch(var(--l6) calc(var(--neutral-c) * 0.7) var(--neutral-h));
+    --gray-7: oklch(var(--l7) calc(var(--neutral-c) * 0.75) var(--neutral-h));
+    --gray-8: oklch(var(--l8) calc(var(--neutral-c) * 0.8) var(--neutral-h));
+    --gray-9: oklch(var(--lg9) var(--neutral-c) var(--neutral-h));
+    --gray-10: oklch(calc(var(--lg9) + var(--hover-shift)) var(--neutral-c) var(--neutral-h));
+    --gray-11: oklch(var(--l11) var(--neutral-c) var(--neutral-h));
+    --gray-12: oklch(var(--l12) calc(var(--neutral-c) * 0.6) var(--neutral-h));
+
+    --accent-1: oklch(var(--l1) calc(var(--accent-c) * 0.1) var(--accent-h));
+    --accent-2: oklch(var(--l2) calc(var(--accent-c) * 0.18) var(--accent-h));
+    --accent-3: oklch(var(--l3) calc(var(--accent-c) * 0.3) var(--accent-h));
+    --accent-4: oklch(var(--l4) calc(var(--accent-c) * 0.4) var(--accent-h));
+    --accent-5: oklch(var(--l5) calc(var(--accent-c) * 0.5) var(--accent-h));
+    --accent-6: oklch(var(--l6) calc(var(--accent-c) * 0.6) var(--accent-h));
+    --accent-7: oklch(var(--l7) calc(var(--accent-c) * 0.7) var(--accent-h));
+    --accent-8: oklch(var(--l8) calc(var(--accent-c) * 0.85) var(--accent-h));
+    --accent-9: oklch(var(--accent-solid-l) var(--accent-c) var(--accent-h));
+    --accent-10: oklch(calc(var(--accent-solid-l) + var(--solid-shift)) var(--accent-c) var(--accent-h));
+    --accent-11: oklch(var(--l11) calc(var(--accent-c) * 0.9) var(--accent-h));
+    --accent-12: oklch(var(--l12) calc(var(--accent-c) * 0.5) var(--accent-h));
+
+    /* Status colours keep fixed hues in every skin. */
+    --success-3: oklch(var(--l3) 0.04 150);
+    --success-7: oklch(var(--l7) 0.08 150);
+    --success-9: oklch(0.52 0.13 150);
+    --success-11: oklch(var(--l11) 0.11 150);
+    --warning-3: oklch(var(--l3) 0.05 80);
+    --warning-7: oklch(var(--l7) 0.1 80);
+    --warning-9: oklch(0.8 0.15 80);
+    --warning-11: oklch(var(--l11) 0.1 70);
+    --danger-3: oklch(var(--l3) 0.04 27);
+    --danger-7: oklch(var(--l7) 0.09 27);
+    --danger-9: oklch(0.53 0.19 27);
+    --danger-10: oklch(calc(0.53 + var(--solid-shift)) 0.19 27);
+    --danger-11: oklch(var(--l11) 0.15 27);
+
+    /* Roles: use these in code. */
+    --page: var(--gray-1);
+    --surface: var(--gray-1);
+    --sunken: var(--gray-2);
+    --float: oklch(var(--l-float) calc(var(--neutral-c) * 0.3) var(--neutral-h));
+    --text: var(--gray-12);
+    --text-muted: var(--gray-11);
+    --text-faint: var(--gray-9);
+    --border: var(--gray-6);
+    --border-strong: var(--gray-8);
+    --border-control: var(--gray-9); /* inputs: 3:1 against the page */
+    --accent: var(--accent-9);
+    --accent-hover: var(--accent-10);
+    --accent-text: var(--accent-11);
+    --accent-soft: var(--accent-3);
+    --focus: var(--focus-color, var(--accent-9));
+    --indicator: var(--indicator-color, var(--accent-9)); /* checked, selected, progress */
+    --on-indicator: var(--on-indicator-color, var(--on-accent));
+    --link: var(--link-color, var(--accent-11));
+    --link-line: var(--link-line-color, currentColor);
+  }
+}
