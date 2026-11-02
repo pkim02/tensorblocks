@@ -35,10 +35,11 @@ export const useApp = create((set, get) => ({
     // One way in: a new link replaces the old one. A merge block (Concat, Add) keeps up to
     // two ways in. A block's output can fork, so its other links stay.
     set((s) => {
-      const merge = LAYERS[s.nodes.find((n) => n.id === target)?.data.type]?.merge;
+      const def = LAYERS[s.nodes.find((n) => n.id === target)?.data.type];
+      const merge = def?.merge;
       let edges = s.edges.filter((e) => e.target !== target || (merge && e.source !== source));
-      // Already two ways in: keep the main line and swap out the side one.
-      if (merge && edges.filter((e) => e.target === target).length >= 2) {
+      // Already as many ways in as it takes: keep the main line and swap out the side one.
+      if (merge && edges.filter((e) => e.target === target).length >= (def.maxInputs ?? 2)) {
         const keep = mainInto({ ...s, edges }, target);
         edges = edges.filter((e) => e.target !== target || e === keep);
       }
@@ -134,7 +135,7 @@ export const useApp = create((set, get) => ({
     switch (action.kind) {
       case "insertBefore": {
         const main = mainInto(s, nodeId);
-        const into = action.side ? s.edges.find((e) => e.target === nodeId && e !== main) : main;
+        const into = action.side ? s.edges.filter((e) => e.target === nodeId && e !== main)[action.sideIndex ?? 0] : main;
         if (into) get().insertOnEdge(into.id, action.type, action.params && makeNode(action.type, { x: 0, y: 0 }, action.params));
         break;
       }

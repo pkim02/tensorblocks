@@ -54,7 +54,7 @@ body { background: var(--page); color: var(--text); }
 
 /* VLM dataset */
 .input-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2); align-items: center; }
-.field-pair { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--space-3); }
+.field-pair { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--space-3); }
 .stack-tight { display: flex; flex-direction: column; gap: var(--space-2); }
 .qa-card { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: var(--space-3); padding: var(--space-3); }
 .qa-card img { width: 96px; height: 96px; object-fit: cover; border-radius: 4px; background: var(--gray-3); }
@@ -255,20 +255,21 @@ body { background: var(--page); color: var(--text); }
 .view-tabs button[aria-current="page"] { background: var(--surface); color: var(--accent-11); box-shadow: 0 0 0 1px var(--border); }
 
 .canvas-view { height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr); }
-.canvas-body { display: grid; grid-template-columns: 13.5rem minmax(0, 1fr) 22rem; min-height: 0; }
+.canvas-body { display: grid; grid-template-columns: 12.5rem minmax(0, 1fr) 20rem; min-height: 0; }
 
 .palette { overflow: hidden auto; padding: var(--space-4); border-inline-end: 1px solid var(--border); }
 .palette > p { margin: 0 0 var(--space-4); }
 .palette-group + .palette-group { margin-top: var(--space-4); }
 .palette-h { font-size: var(--step--1); color: var(--text-muted); margin: 0 0 var(--space-2); font-weight: 700; }
-.palette ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1); }
+.palette ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-1); }
 .palette li { margin: 0; }
 .palette-item {
   width: 100%;
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: baseline;
-  gap: var(--space-2);
+  gap: 0 var(--space-2);
   padding: var(--space-2) var(--space-3);
   text-align: start;
   background: var(--surface);
@@ -278,7 +279,7 @@ body { background: var(--page); color: var(--text); }
 }
 .palette-item:hover { border-color: var(--accent-9); background: var(--accent-2); }
 .pi-name { font-weight: 700; font-size: var(--step--1); }
-.pi-ko { font-size: 12px; color: var(--text-muted); }
+.pi-ko { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
 
 .insp-h { font-size: var(--step-1); }
 .insp-ko { font-size: var(--step--1); font-weight: 400; }

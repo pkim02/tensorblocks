@@ -157,15 +157,63 @@ function analyzeUncached(nodes, edges, numClasses) {
     return r;
   }
 
-  const seen = new Set();
+  // Which way a fork continues the main line: towards an output if it can, the longest way otherwise.
+  const reach = new Map();
+  const reachOf = (id) => {
+    if (reach.has(id)) return reach.get(id);
+    reach.set(id, 0); // a loop adds nothing
+    const next = (outs.get(id) || []).map((e) => reachOf(e.target));
+    const value = 1 + (next.length ? Math.max(...next) : LAYERS[byId.get(id).data.type].terminal ? 1000 : 0);
+    reach.set(id, value);
+    return value;
+  };
+  const nextLink = (id) => (outs.get(id) || []).reduce((best, e) => (!best || reachOf(e.target) > reachOf(best.target) ? e : best), null);
+
+  for (let cur = inputs[0]; cur && !r.chain.includes(cur.id);) {
+    r.chain.push(cur.id);
+    const next = LAYERS[cur.data.type].terminal ? null : nextLink(cur.id);
+    cur = next ? byId.get(next.target) : null;
+  }
+
+  // What feeds a block, main line first.
+  const sourcesOf = (id) => {
+    const main = r.chain[r.chain.indexOf(id) - 1];
+    const sources = [...new Set((ins.get(id) || []).map((e) => e.source))];
+    return [...sources.filter((s) => s === main), ...sources.filter((s) => s !== main)];
+  };
+
+  // Everything the last block depends on, inputs first: the main line in order, with side branches just before the block they join.
+  const walking = new Set();
+  const walked = new Set();
+  let loopAt = null;
+  const walk = (id) => {
+    walking.add(id);
+    for (const s of sourcesOf(id)) {
+      if (walking.has(s)) loopAt ??= id;
+      else if (!walked.has(s)) walk(s);
+    }
+    walking.delete(id);
+    walked.add(id);
+    r.order.push(id);
+  };
+  walk(r.chain[r.chain.length - 1]);
+  if (loopAt) {
+    r.issues.push({
+      level: "error",
+      title: "고리가 생겼어요",
+      text: "블록 연결이 한 바퀴 돌아 제자리로 와요. 왼쪽에서 오른쪽으로 흐르게 이어 주세요.",
+      nodeId: loopAt,
+      fixes: [],
+    });
+  }
 
   // Works out one block given what flows into it; records its issue and parameter count.
-  const visit = (node, shape, blocked, ctx) => {
+  const visit = (node, shape, blocked, ctx, tooMany) => {
     const def = LAYERS[node.data.type];
     const p = node.data.params;
     const info = { inShape: shape, outShape: null, issue: null, params: 0, blocked };
     if (!blocked) {
-      const res = def.infer(shape, p, ctx);
+      const res = tooMany ? { error: tooMany } : def.infer(shape, p, ctx);
       if (res.error) {
         info.issue = { ...res.error, nodeId: node.id };
         r.issues.push(info.issue);
@@ -184,116 +232,71 @@ function analyzeUncached(nodes, edges, numClasses) {
     r.nodeInfo[node.id] = info;
     return info;
   };
-  // `side` marks the second line into a merge block: it turns red too, but the note sits on the main line.
-  const linkInfo = (edge, from, info, side = false) => {
-    if (edge) r.edgeInfo[edge.id] = { shape: r.nodeInfo[from].outShape, issue: info.issue, blocked: info.blocked, side };
-  };
 
-  // Walks back up a merge block's second input to where that branch starts (its own source,
-  // or a block already worked out, which it forks off), then forward. `merge` is the block it joins.
-  const walkSide = (edge, merge) => {
-    const ids = [];
-    let n = byId.get(edge.source);
-    while (n && !seen.has(n.id)) {
-      seen.add(n.id);
-      ids.unshift(n.id);
-      const up = ins.get(n.id) || [];
-      n = up.length ? byId.get(up[0].source) : null;
-    }
-    const from = n?.id;
-    let shape = from ? r.nodeInfo[from]?.outShape : null;
-    let blocked = !!from && !shape;
-    if (from === merge) {
-      r.issues.push({ level: "error", title: "고리가 생겼어요", text: "합치는 블록의 출력이 다시 자기 입력으로 돌아와요.", nodeId: merge, fixes: [] });
-    } else if (!from && !LAYERS[byId.get(ids[0]).data.type].source) {
-      r.issues.push({
-        level: "error",
-        title: "갈래에 시작이 없어요",
-        text: "합쳐지는 쪽 갈래도 맨 앞에 입력 블록이 있거나 앞 블록에서 이어져야 해요.",
-        nodeId: ids[0],
-        fixes: [],
-      });
+  let branch = [];
+  for (const id of r.order) {
+    const node = byId.get(id);
+    const def = LAYERS[node.data.type];
+    const at = r.chain.indexOf(id);
+    const sources = sourcesOf(id).filter((s) => r.nodeInfo[s]); // a loop's way back is left out
+    const shapes = sources.map((s) => r.nodeInfo[s].outShape);
+    let blocked = shapes.some((s) => !s);
+    if (!def.source && !sources.length) {
+      if (!loopAt) {
+        r.issues.push({
+          level: "error",
+          title: "갈래에 시작이 없어요",
+          text: "합쳐지는 쪽 갈래도 맨 앞에 입력 블록이 있거나 앞 블록에서 이어져야 해요.",
+          nodeId: id,
+          fixes: [],
+        });
+      }
       blocked = true;
     }
-    ids.forEach((id, k) => {
-      const info = visit(byId.get(id), shape, blocked, { numClasses, afterInput: false });
-      if (k > 0 || r.nodeInfo[from]) linkInfo((ins.get(id) || [])[0], k > 0 ? ids[k - 1] : from, info);
-      if (info.issue?.level === "error") blocked = true;
-      shape = info.outShape;
-    });
-    return { ids, shape: blocked ? null : shape, blocked, edge, last: ids[ids.length - 1] ?? from };
-  };
+    const most = def.maxInputs ?? (def.merge ? 2 : 1);
+    const tooMany =
+      sources.length > most
+        ? {
+            level: "error",
+            title: "입력이 너무 많아요",
+            text: def.merge
+              ? `${def.name}의 입력은 ${most}개까지예요.`
+              : `${def.name}은(는) 입력을 하나만 받아요. 여러 갈래를 합치려면 사이에 Add 블록을 넣어 주세요.`,
+            fixes: [],
+          }
+        : null;
+    const ctx = { numClasses, afterInput: at > 0 && byId.get(r.chain[at - 1]).data.type === "input" };
+    if (def.merge && sources.length > 1) ctx.side = { shape: shapes[1], shapes: shapes.slice(1) };
+    const info = visit(node, shapes[0] ?? null, blocked, ctx, tooMany);
+    info.inShapes = shapes;
+    r.inputsOf[id] = sources;
 
-  // Which way a fork continues the main line: towards an output if it can, the longest way otherwise.
-  const reach = new Map();
-  const reachOf = (id) => {
-    if (reach.has(id)) return reach.get(id);
-    reach.set(id, 0); // a loop adds nothing
-    const next = (outs.get(id) || []).map((e) => reachOf(e.target));
-    const value = 1 + (next.length ? Math.max(...next) : LAYERS[byId.get(id).data.type].terminal ? 1000 : 0);
-    reach.set(id, value);
-    return value;
-  };
-  const nextLink = (id) => (outs.get(id) || []).reduce((best, e) => (!best || reachOf(e.target) > reachOf(best.target) ? e : best), null);
-
-  let cur = inputs[0];
-  let shape = null;
-  let blocked = false;
-  let prev = null;
-
-  while (cur) {
-    if (seen.has(cur.id)) {
-      r.issues.push({
-        level: "error",
-        title: "고리가 생겼어요",
-        text: "블록 연결이 한 바퀴 돌아 제자리로 와요. 왼쪽에서 오른쪽으로 한 줄로 이어 주세요.",
-        fixes: [],
-      });
-      blocked = true;
-      break;
+    // `side` marks the other lines into a merge block: they turn red too, but the note sits on the main line.
+    for (const e of ins.get(id) || []) {
+      if (!sources.includes(e.source)) continue;
+      const side = e.source !== sources[0];
+      r.edgeInfo[e.id] = {
+        shape: r.nodeInfo[e.source].outShape,
+        issue: info.issue,
+        blocked: info.blocked,
+        side,
+        skip: side && at >= 0 && r.chain.includes(e.source),
+      };
     }
-    seen.add(cur.id);
-    r.chain.push(cur.id);
 
-    const def = LAYERS[cur.data.type];
-    const ctx = { numClasses, afterInput: prev?.data.type === "input" };
-    const incoming = ins.get(cur.id) || [];
-    let side = null;
-    if (def.merge) {
-      const sideEdge = incoming.find((e) => e.source !== prev?.id);
-      side = sideEdge ? walkSide(sideEdge, cur.id) : null;
-      if (side) {
-        if (side.ids.length) r.side[cur.id] = side.ids;
-        ctx.side = side;
+    if (at < 0) branch.push(id);
+    else {
+      if (branch.length) r.side[id] = branch;
+      branch = [];
+      if (def.terminal && (outs.get(id) || []).length) {
+        r.issues.push({ level: "error", title: "출력 뒤에 블록이 있어요", text: `'${def.ko}'은(는) 맨 끝에 와야 해요.`, nodeId: id, fixes: [] });
       }
     }
-    const info = visit(cur, shape, blocked || !!side?.blocked, ctx);
-    if (info.issue?.level === "error" || side?.blocked) blocked = true;
-    if (side) {
-      linkInfo(side.edge, side.last, info, true);
-      r.edgeInfo[side.edge.id].skip = !side.ids.length;
-    }
-    if (prev)
-      linkInfo(
-        incoming.find((e) => e.source === prev.id),
-        prev.id,
-        info,
-      );
-
-    const nextEdges = outs.get(cur.id) || [];
-    if (def.terminal && nextEdges.length) {
-      r.issues.push({ level: "error", title: "출력 뒤에 블록이 있어요", text: `'${def.ko}'은(는) 맨 끝에 와야 해요.`, nodeId: cur.id, fixes: [] });
-      blocked = true;
-      break;
-    }
-    shape = info.outShape;
-    prev = cur;
-    cur = nextEdges.length ? byId.get(nextLink(cur.id).target) : null;
   }
 
   // A fork has to come back together; a branch that never joins is left out of the model.
-  for (const id of seen) {
-    if ((outs.get(id) || []).some((e) => !seen.has(e.target))) {
+  for (const id of r.order) {
+    if (!LAYERS[byId.get(id).data.type].terminal && (outs.get(id) || []).some((e) => !r.order.includes(e.target))) {
       r.issues.push({
         level: "warn",
         title: "갈래가 합쳐지지 않아요",
@@ -305,7 +308,7 @@ function analyzeUncached(nodes, edges, numClasses) {
   }
 
   const last = byId.get(r.chain[r.chain.length - 1]);
-  const vlm = r.chain.some((id) => ["concat", "textout"].includes(byId.get(id).data.type));
+  const vlm = r.order.some((id) => ["concat", "textout"].includes(byId.get(id).data.type));
   if (vlm) r.kind = "vlm";
   if (!LAYERS[last.data.type].terminal) {
     r.issues.push({
@@ -316,7 +319,7 @@ function analyzeUncached(nodes, edges, numClasses) {
       fixes: [{ label: vlm ? "글 출력 붙이기" : "분류 출력 붙이기", action: { kind: "append", type: vlm ? "textout" : "output" } }],
     });
   }
-  for (const n of r.chain.slice(1)) {
+  for (const n of r.order.slice(1)) {
     if (byId.get(n).data.type === "input") {
       r.issues.push({
         level: "error",
@@ -328,13 +331,6 @@ function analyzeUncached(nodes, edges, numClasses) {
     }
   }
 
-  for (const id of r.chain) r.order.push(...(r.side[id] || []), id);
-  for (const id of r.order) {
-    const main = r.chain[r.chain.indexOf(id) - 1];
-    const sources = (ins.get(id) || []).map((e) => e.source).filter((s) => r.order.includes(s));
-    r.inputsOf[id] = [...sources.filter((s) => s === main), ...sources.filter((s) => s !== main)];
-    r.nodeInfo[id].inShapes = r.inputsOf[id].map((s) => r.nodeInfo[s].outShape);
-  }
   markDetached(r, nodes);
   r.ok = !r.issues.some((i) => i.level === "error");
   r.signature = JSON.stringify([
