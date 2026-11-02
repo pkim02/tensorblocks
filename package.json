@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test": "node --experimental-test-module-mocks --test tests/*.test.js",
     "deploy": "vite build && netlify deploy --prod --dir dist --no-build --site 2d7d3cc9-4d44-41cb-9420-1c9c43b2fe00"
   },
   "dependencies": {
@@ -20,6 +21,7 @@
     "zustand": "^5.0.16"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^6.0.0",
     "@vitejs/plugin-react": "^6.1.2",
     "vite": "^8.3.5"
   }

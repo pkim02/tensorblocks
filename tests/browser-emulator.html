@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ko" data-mode="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TensorBlocks Emulator Test</title>
+    <link rel="stylesheet" href="/kit/tokens.css" />
+    <link rel="stylesheet" href="/kit/kit.css" />
+    <script src="/kit/kit.js" defer></script>
+  </head>
+  <body>
+    <aside style="padding: 12px; border-bottom: 1px solid #ccc">
+      <strong>로컬 Emulator 전용 테스트 · 실제 Google 로그인 아님</strong>
+      <button id="alice" class="btn outline small">테스트 Alice 로그인</button>
+      <button id="bob" class="btn outline small">테스트 Bob 로그인</button>
+      <span id="test-status" role="status">연결 준비 중</span>
+    </aside>
+    <div id="root"></div>
+    <script type="module" src="/tests/browser-emulator.js"></script>
+  </body>
+</html>

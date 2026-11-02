@@ -9,6 +9,7 @@ const newClass = (name) => ({ id: newId("c"), name, samples: [] });
 const startTemplate = TEMPLATES.find((t) => t.id === "tm");
 
 export const useApp = create((set, get) => ({
+  projectRevision: 0,
   // Data ------------------------------------------------------------------
   classes: [newClass("Class 1"), newClass("Class 2")],
   camClassId: null,

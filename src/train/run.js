@@ -37,7 +37,8 @@ export async function startTraining() {
   stopRequested = false;
   s.setTrain({ status: "training", logs: [], message: "준비 중…", epoch: 0, total: +s.settings.epochs });
 
-  const update = (patch) => useApp.getState().setTrain(patch);
+  const current = () => useApp.getState().projectRevision === s.projectRevision;
+  const update = (patch) => { if (current()) useApp.getState().setTrain(patch); };
   try {
     const result = await trainModel({
       chainNodes,
@@ -47,6 +48,11 @@ export async function startTraining() {
       onEpoch: (epoch, logs) => update({ epoch: epoch + 1, logs: [...useApp.getState().train.logs, { epoch: epoch + 1, ...logs }] }),
       shouldStop: () => stopRequested,
     });
+    if (!current()) {
+      disposeTrained(result);
+      useApp.getState().setTrain({ status: "idle", logs: [], message: "", epoch: 0 });
+      return;
+    }
     disposeTrained(useApp.getState().trained);
     useApp.getState().setTrained({
       ...result,
@@ -56,6 +62,10 @@ export async function startTraining() {
     });
     update({ status: "done", message: stopRequested ? "중간에 멈췄어요. 여기까지 배운 모델로 시험해 볼 수 있어요." : "학습이 끝났어요." });
   } catch (e) {
+    if (!current()) {
+      useApp.getState().setTrain({ status: "idle", logs: [], message: "", epoch: 0 });
+      return;
+    }
     console.error(e);
     const offline = /fetch|network|Failed to load/i.test(String(e?.message));
     update({

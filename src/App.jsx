@@ -9,11 +9,13 @@ import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import ThreeView from "./components/ThreeView.jsx";
 import CodeView from "./components/CodeView.jsx";
 import AuthButton from "./components/AuthButton.jsx";
+import ProjectControls from "./components/ProjectControls.jsx";
 
 export default function App() {
   const view = useApp((s) => s.view);
   return (
     <ReactFlowProvider>
+      <ProjectControls visible={view === "main"} />
       {view === "three" ? (
         <ErrorBoundary>
           <ThreeView />

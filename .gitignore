@@ -3,3 +3,6 @@ dist
 .DS_Store
 .netlify
 .env.local
+.local-tools/
+firebase-debug.log
+firestore-debug.log
