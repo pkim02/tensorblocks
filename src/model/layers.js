@@ -187,6 +187,24 @@ const KERNEL_FIELDS = [
   },
 ];
 
+// Add: when only the channel or vector length differs, a small layer on the side branch fixes it, as ResNet does.
+function addFix(main, side) {
+  if (is3D(main) && is3D(side) && main[0] === side[0] && main[1] === side[1]) {
+    return {
+      label: `갈래에 1×1 Conv2D 넣기 → ${fmtShape(main)}`,
+      note: "채널 수만 맞춰요",
+      action: { kind: "insertBefore", side: true, type: "conv2d", params: { filters: main[2], kernel: 1, stride: 1, padding: "same", activation: "linear" } },
+    };
+  }
+  if (is1D(main) && is1D(side)) {
+    return {
+      label: `갈래에 Dense 넣기 → ${fmtShape(main)}`,
+      action: { kind: "insertBefore", side: true, type: "dense", params: { units: main[0], activation: "linear" } },
+    };
+  }
+  return null;
+}
+
 // Spatial size after a k×k window with stride s (TF "same"/"valid" rules).
 function convOut(name, inShape, p, channels) {
   const [h, w] = inShape;
@@ -644,6 +662,43 @@ export const LAYERS = {
     params: () => 0,
   },
 
+  add: {
+    name: "Add",
+    ko: "두 갈래 더하기",
+    group: "image",
+    merge: true,
+    exportOnly: true, // train.js still builds a one-line Sequential model
+    defaults: {},
+    fields: [],
+    about:
+      "두 갈래의 출력을 칸마다 더해요. ResNet은 이렇게 앞 블록의 출력을 건너뛰어 더해서(skip connection), 층이 깊어져도 학습이 잘 돼요. 두 입력의 모양이 똑같아야 해요.",
+    summary: () => "입력 2개를 칸마다 더하기",
+    infer: (inShape, _, ctx) => {
+      if (!ctx.side) {
+        return {
+          error: {
+            level: "error",
+            title: "입력이 하나뿐이에요",
+            text: "Add는 입력이 두 개예요. 앞쪽 블록의 오른쪽 점에서 이 블록으로 선을 하나 더 이어 주세요.",
+            fixes: [{ label: "이 블록 지우기", action: { kind: "remove" } }],
+          },
+        };
+      }
+      const side = ctx.side.shape;
+      if (fmtShape(inShape) === fmtShape(side)) return { out: inShape };
+      const fix = addFix(inShape, side);
+      return {
+        error: {
+          level: "error",
+          title: "두 갈래의 모양이 달라요",
+          text: `한쪽은 ${fmtShape(inShape)}, 다른 쪽은 ${fmtShape(side)}이에요. 칸마다 더하려면 모양이 똑같아야 해요. PyTorch였다면 "The size of tensor a must match the size of tensor b" 에러가 났을 거예요.`,
+          fixes: fix ? [fix] : [{ label: "이 블록 지우기", action: { kind: "remove" } }],
+        },
+      };
+    },
+    params: () => 0,
+  },
+
   gemma: {
     name: "Gemma 2",
     ko: "언어 모델",
@@ -715,6 +770,7 @@ export const PALETTE = [
   { title: "이미지 층", items: ["conv2d", "depthwise", "maxpool", "avgpool", "gap", "gmp", "flatten"] },
   { title: "벡터 층", items: ["dense", "layernorm"] },
   { title: "활성화와 규제", items: ["activation", "dropout", "batchnorm"] },
+  { title: "갈래 합치기", items: ["add"] },
   { title: "입력과 출력", items: ["input", "output"] },
 ];
 
