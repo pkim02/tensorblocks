@@ -1,8 +1,9 @@
 import { useRef, useState } from "react";
-import { useApp } from "../store.js";
+import { useApp, useAnalysis } from "../store.js";
 import { useWebcam } from "../data/webcam.js";
 import { filesToSamples, grabFrame, makeSample } from "../data/images.js";
 import { makeShapesDataset } from "../data/demo.js";
+import DatasetPanel from "./DatasetPanel.jsx";
 
 // No confirm box (embedded browsers auto-answer them); the toast offers an undo instead.
 export function DemoButton() {
@@ -24,21 +25,22 @@ export function DemoButton() {
 export default function DataPanel() {
   const classes = useApp((s) => s.classes);
   const addClass = useApp((s) => s.addClass);
+  const a = useAnalysis();
 
+  if (a.kind === "vlm") return <DatasetPanel />;
   return (
-    <section className="lane lane-data" aria-labelledby="data-h">
-      <h2 id="data-h" className="visually-hidden">
-        데이터
-      </h2>
-      <div className="stack">
-        {classes.map((c) => (
-          <ClassCard key={c.id} cls={c} canDelete={classes.length > 2} />
-        ))}
-        <button className="btn outline block add-class" onClick={addClass}>
-          클래스 추가
-        </button>
+    <>
+      <div className="row-between">
+        <h2 className="panel-h">클래스별 사진</h2>
+        <DemoButton />
       </div>
-    </section>
+      {classes.map((c) => (
+        <ClassCard key={c.id} cls={c} canDelete={classes.length > 2} />
+      ))}
+      <button className="btn outline block add-class" onClick={addClass}>
+        클래스 추가
+      </button>
+    </>
   );
 }
 

@@ -45,7 +45,7 @@ export const useApp = create((set, get) => ({
       return { templateId: null, edges: [...edges, makeEdge(source, target)] };
     });
   },
-  select: (selectedId) => set({ selectedId }),
+  select: (selectedId) => set((s) => ({ selectedId, panel: selectedId ? "block" : s.panel })),
 
   loadTemplate: (id) => {
     const t = TEMPLATES.find((x) => x.id === id);
@@ -195,8 +195,14 @@ export const useApp = create((set, get) => ({
 
   // View ----------------------------------------------------------------------
   demoData: false,
-  view: "main",
+  view: "canvas",
   setView: (view) => set({ view }),
+  panel: "data",
+  setPanel: (panel) => set({ panel }),
+
+  // VLM data: `fields` says which columns hold the photo, question and answer once read.
+  dataset: { repo: "HuggingFaceM4/the_cauldron", config: "cocoqa", split: "train", fields: null },
+  setDataset: (patch) => set((s) => ({ dataset: { ...s.dataset, ...patch } })),
 }));
 
 export const useAnalysis = () => {
