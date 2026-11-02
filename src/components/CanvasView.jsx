@@ -250,7 +250,14 @@ function BlockNode({ id, data }) {
 function ShapeEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, selected }) {
   const a = useAnalysis();
   const info = a.edgeInfo[id];
-  const [path, lx, ly] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition });
+  // A skip connection arcs over the blocks it jumps past, which sit in the same row.
+  const [path, lx, ly] = info?.skip
+    ? [
+        `M ${sourceX} ${sourceY} C ${sourceX + 80} ${sourceY - 170}, ${targetX - 80} ${targetY - 170}, ${targetX} ${targetY}`,
+        (sourceX + targetX) / 2,
+        (sourceY + targetY) / 2 - 128,
+      ]
+    : getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition });
   const level = info?.issue && !info.blocked ? info.issue.level : null;
   const state = !info ? "idle" : (level ?? (info.blocked ? "blocked" : "ok"));
 
