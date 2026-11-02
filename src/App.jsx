@@ -8,6 +8,7 @@ import CanvasView from "./components/CanvasView.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import ThreeView from "./components/ThreeView.jsx";
 import CodeView from "./components/CodeView.jsx";
+import AuthButton from "./components/AuthButton.jsx";
 
 export default function App() {
   const view = useApp((s) => s.view);
@@ -32,7 +33,10 @@ export default function App() {
               <h1 className="brand">TensorBlocks</h1>
               <p className="tagline">Teachable Machine처럼 쉽게 만들고, 모델 속은 블록으로 열어 보고, PyTorch 코드로 가져가요.</p>
             </div>
-            <DemoButton />
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <DemoButton />
+              <AuthButton />
+            </div>
           </header>
           <main className="flow-main">
             <Connectors />
