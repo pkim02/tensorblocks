@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ko" data-mode="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TensorBlocks Emulator Test</title>
+    <link rel="stylesheet" href="/kit/tokens.css" />
+    <link rel="stylesheet" href="/kit/kit.css" />
+    <script src="/kit/kit.js" defer></script>
+  </head>
+  <body>
+    <aside style="padding: 12px; border-bottom: 1px solid #ccc">
+      <strong>로컬 Emulator 전용 · Google 로그인과 HF 미리보기는 테스트 환경</strong>
+      <button id="alice" class="btn outline small">테스트 Alice 로그인</button>
+      <button id="bob" class="btn outline small">테스트 Bob 로그인</button>
+      <button id="small-model" class="btn outline small">작은 CNN 학습 준비</button>
+      <span id="test-status" role="status">연결 준비 중</span>
+      <span id="model-test-status" aria-label="테스트 진단"></span>
+    </aside>
+    <div id="root"></div>
+    <script type="module" src="/tests/browser-emulator.js"></script>
+  </body>
+</html>

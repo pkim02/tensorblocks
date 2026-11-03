@@ -16,6 +16,7 @@ import { useApp, useAnalysis } from "../store.js";
 import { LAYERS, PALETTE, fmtShape, fmtCount, torchLines, torchShape } from "../model/layers.js";
 import { TEMPLATES, NODE_W } from "../model/graph.js";
 import AuthButton from "./AuthButton.jsx";
+import ProjectControls from "./ProjectControls.jsx";
 import IssueNote from "./IssueNote.jsx";
 import ViewTabs from "./ViewTabs.jsx";
 import WorkPanel from "./WorkPanel.jsx";
@@ -35,6 +36,7 @@ export default function CanvasView() {
   const templateId = useApp((s) => s.templateId);
   const loadTemplate = useApp((s) => s.loadTemplate);
   const training = useApp((s) => s.train.status === "training");
+  const projectRevision = useApp((s) => s.projectRevision);
   const a = useAnalysis();
   const rf = useReactFlow();
 
@@ -45,6 +47,7 @@ export default function CanvasView() {
   useEffect(() => {
     const onKey = (e) => {
       if (e.key !== "Delete" && e.key !== "Backspace") return;
+      if (e.target.closest("dialog[open]")) return;
       if (e.target.closest("input, select, textarea, [contenteditable]")) return;
       const s = useApp.getState();
       if (s.selectedId) s.removeNode(s.selectedId);
@@ -87,7 +90,7 @@ export default function CanvasView() {
   const count = nodes.length;
   useEffect(() => {
     fit();
-  }, [count, fit]);
+  }, [count, fit, projectRevision]);
 
   const onDrop = (e) => {
     const type = e.dataTransfer.getData(DRAG_TYPE);
@@ -140,6 +143,7 @@ export default function CanvasView() {
         >
           한 줄로 정렬
         </button>
+        <ProjectControls />
         <AuthButton />
       </header>
 

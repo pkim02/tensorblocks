@@ -14,6 +14,7 @@ const TABS = [
 export default function WorkPanel({ inspector }) {
   const panel = useApp((s) => s.panel);
   const setPanel = useApp((s) => s.setPanel);
+  const projectRevision = useApp((s) => s.projectRevision);
   return (
     <aside className="work-panel" aria-label="작업 패널">
       <nav className="work-tabs" aria-label="작업 단계">
@@ -24,7 +25,7 @@ export default function WorkPanel({ inspector }) {
         ))}
       </nav>
       <div className="work-body">
-        {panel === "data" && <DataPanel />}
+        {panel === "data" && <DataPanel key={projectRevision} />}
         {panel === "train" && <TrainPanel />}
         {panel === "test" && <PreviewPanel />}
         {panel === "block" && inspector}

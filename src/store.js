@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { applyNodeChanges, applyEdgeChanges } from "@xyflow/react";
 import { LAYERS } from "./model/layers.js";
+import { defaultDataset } from "./data/dataset.js";
 import { analyze, buildTemplate, makeEdge, makeNode, newId, sidePosition, TEMPLATES, GAP_X, NODE_W } from "./model/graph.js";
 
 const newClass = (name) => ({ id: newId("c"), name, samples: [] });
@@ -9,6 +10,7 @@ const newClass = (name) => ({ id: newId("c"), name, samples: [] });
 const startTemplate = TEMPLATES.find((t) => t.id === "tm");
 
 export const useApp = create((set, get) => ({
+  projectRevision: 0,
   // Data ------------------------------------------------------------------
   classes: [newClass("Class 1"), newClass("Class 2")],
   camClassId: null,
@@ -206,7 +208,7 @@ export const useApp = create((set, get) => ({
   setPanel: (panel) => set({ panel }),
 
   // VLM data: `fields` says which columns hold the photo, question and answer once read.
-  dataset: { repo: "HuggingFaceM4/the_cauldron", config: "cocoqa", split: "train", fields: null },
+  dataset: defaultDataset(),
   setDataset: (patch) => set((s) => ({ dataset: { ...s.dataset, ...patch } })),
 }));
 

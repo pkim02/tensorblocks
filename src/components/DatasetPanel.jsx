@@ -21,7 +21,8 @@ export default function DatasetPanel() {
       .then((list) => {
         setConfigs(list);
         const current = list.find((c) => c.config === dataset.config) || list[0];
-        setDataset({ config: current.config, split: current.splits.includes("train") ? "train" : current.splits[0] });
+        const split = current.splits.includes(dataset.split) ? dataset.split : current.splits.includes("train") ? "train" : current.splits[0];
+        setDataset({ config: current.config, split });
       })
       .catch((e) => !ctrl.signal.aborted && failed(e));
     return () => ctrl.abort();
