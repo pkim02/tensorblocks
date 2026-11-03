@@ -15,6 +15,7 @@ import {
 import { useApp, useAnalysis } from "../store.js";
 import { LAYERS, PALETTE, fmtShape, fmtCount, torchLines, torchShape } from "../model/layers.js";
 import { TEMPLATES, NODE_W } from "../model/graph.js";
+import AuthButton from "./AuthButton.jsx";
 import IssueNote from "./IssueNote.jsx";
 import ViewTabs from "./ViewTabs.jsx";
 import WorkPanel from "./WorkPanel.jsx";
@@ -139,6 +140,7 @@ export default function CanvasView() {
         >
           한 줄로 정렬
         </button>
+        <AuthButton />
       </header>
 
       <div className="canvas-body">
