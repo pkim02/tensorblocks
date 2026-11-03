@@ -16,17 +16,21 @@ const controller = createProjectController({
 });
 const NOTICE = "모델 구성과 설정을 저장합니다. 사진과 학습 결과는 포함되지 않습니다.";
 
-// Stay mounted across view changes so account changes also clear canvas / 3D workspaces.
-export default function ProjectControls({ visible }) {
+// Account cleanup must stay mounted even when the canvas toolbar is not visible.
+export function ProjectSession() {
+  useEffect(() => controller.start(), []);
+  return null;
+}
+
+export default function ProjectControls() {
   const dialog = useRef(null);
   const user = useAuth((s) => s.user);
   const ready = useAuth((s) => s.ready);
   const state = useStore(controller.store);
   const app = useApp();
-  useEffect(() => controller.start(), []);
   useEffect(() => {
     dialog.current?.close();
-  }, [user?.uid, visible]);
+  }, [user?.uid]);
   const training = app.train.status === "training";
   const dirty = controller.dirty();
   const close = () => {
@@ -36,24 +40,18 @@ export default function ProjectControls({ visible }) {
   const date = (value) => value?.toDate?.().toLocaleString("ko-KR") ?? "시간 확인 중";
   return (
     <>
-      {visible && (
-        <div style={{ padding: "0 24px 12px", display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
-          <button
-            className="btn outline small"
-            disabled={!ready || !user || !firebaseApp}
-            onClick={() => {
-              dialog.current.showModal();
-              controller.list();
-            }}
-          >
-            프로젝트 저장·불러오기
-          </button>
-          <span className="hint">
-            {user ? (state.id ? `${state.name} · ${dirty ? "저장하지 않은 변경 있음" : "저장됨"}` : "새 프로젝트") : "Google 로그인 후 사용할 수 있어요."}
-          </span>
-          <span className="hint">{NOTICE}</span>
-        </div>
-      )}
+      <button
+        className="btn outline small"
+        disabled={!ready || !user || !firebaseApp}
+        aria-label="프로젝트 저장·불러오기"
+        title={user ? (state.id ? `${state.name} · ${dirty ? "저장하지 않은 변경 있음" : "저장됨"}` : "새 프로젝트") : "Google 로그인 후 사용할 수 있어요."}
+        onClick={() => {
+          dialog.current.showModal();
+          controller.list();
+        }}
+      >
+        저장·불러오기
+      </button>
       <dialog ref={dialog} className="dialog" aria-labelledby="project-title" onCancel={controller.cancelLoad}>
         <h2 id="project-title">내 프로젝트</h2>
         <p className="hint">{NOTICE}</p>

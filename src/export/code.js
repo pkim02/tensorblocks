@@ -80,7 +80,58 @@ function describe(analysis, nodes) {
   const size = chain[0].node.data.params.size;
   const bbType = chain[1]?.node.data.type;
   const backbone = BACKBONES[bbType] ? { type: bbType, ...BACKBONES[bbType] } : null;
-  return { chain, size, backbone, head: chain.slice(backbone ? 2 : 1) };
+  const order = analysis.order.map((id) => ({ node: byId.get(id), info: analysis.nodeInfo[id] }));
+  return { chain, order, size, backbone, head: chain.slice(backbone ? 2 : 1) };
+}
+
+// A model with skip connections can't be one nn.Sequential: every block gets a variable.
+const isBranched = (analysis) => analysis.order.some((id) => analysis.inputsOf[id].length > 1);
+
+function branchVars(analysis, backbone) {
+  const vars = new Map(analysis.order.map((id, i) => [id, i === 0 ? "x" : `x${i}`]));
+  const blocks = analysis.order.slice(backbone ? 2 : 1);
+  return { vars, blocks };
+}
+
+// nn.LayerNorm normalizes the last axis, but PyTorch images keep channels second.
+const LAYER_NORM_2D = `class LayerNorm2d(nn.Module):
+    # 이미지의 채널마다 정규화해요 (ConvNeXt와 같은 방식).
+    def __init__(self, channels):
+        super().__init__()
+        self.norm = nn.LayerNorm(channels)
+
+    def forward(self, x):
+        return self.norm(x.permute(0, 2, 3, 1)).permute(0, 3, 1, 2)
+
+
+`;
+
+function torchBranched(analysis, nodes, backbone) {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const { vars, blocks } = branchVars(analysis, backbone);
+  const init = [];
+  const forward = [];
+  if (backbone) {
+    init.push(...backbone.torch, "for p in self.backbone.parameters():", "    p.requires_grad = False  # 사전학습 가중치는 고정");
+    forward.push(`${vars.get(analysis.order[1])} = self.backbone(${backbone.hf ? "pixel_values=x).pooler_output" : "x)"}`);
+  }
+  const used = {};
+  for (const id of blocks) {
+    const { type, params } = byId.get(id).data;
+    const info = analysis.nodeInfo[id];
+    const from = analysis.inputsOf[id].map((s) => vars.get(s));
+    if (type === "add") {
+      forward.push(`${vars.get(id)} = ${from.join(" + ")}  # Add → ${torchShape(info.outShape)}`);
+      continue;
+    }
+    used[type] = (used[type] ?? 0) + 1;
+    const name = `${type}_${used[type]}`;
+    init.push(`# ${LAYERS[type].name} (${LAYERS[type].ko}) → ${torchShape(info.outShape)}`);
+    init.push(`self.${name} = nn.Sequential(`, ...pad(torchLines(type, params, info.inShape, info.outShape), 4), ")");
+    forward.push(`${vars.get(id)} = self.${name}(${from[0]})`);
+  }
+  forward.push(`return ${vars.get(analysis.chain[analysis.chain.length - 1])}`);
+  return { init, forward };
 }
 
 export function folderName(name) {
@@ -139,21 +190,26 @@ train_loader = DataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True)
 val_loader = DataLoader(val_set, batch_size=BATCH_SIZE)
 print(f"사진 {len(dataset)}장, 클래스 {CLASSES}")`;
 
-  const init = backbone
-    ? [
-        ...backbone.torch,
-        "for p in self.backbone.parameters():",
-        "    p.requires_grad = False  # 사전학습 가중치는 고정",
-        "self.head = nn.Sequential(",
-        ...pad(body, 4),
-        ")",
-      ]
-    : ["self.layers = nn.Sequential(", ...pad(body, 4), ")"];
-  const forward = backbone
-    ? backbone.hf
-      ? ["return self.head(self.backbone(pixel_values=x).pooler_output)"]
-      : ["return self.head(self.backbone(x))"]
-    : ["return self.layers(x)"];
+  const branched = isBranched(analysis) ? torchBranched(analysis, nodes, backbone) : null;
+  const init = branched
+    ? branched.init
+    : backbone
+      ? [
+          ...backbone.torch,
+          "for p in self.backbone.parameters():",
+          "    p.requires_grad = False  # 사전학습 가중치는 고정",
+          "self.head = nn.Sequential(",
+          ...pad(body, 4),
+          ")",
+        ]
+      : ["self.layers = nn.Sequential(", ...pad(body, 4), ")"];
+  const forward = branched
+    ? branched.forward
+    : backbone
+      ? backbone.hf
+        ? ["return self.head(self.backbone(pixel_values=x).pooler_output)"]
+        : ["return self.head(self.backbone(x))"]
+      : ["return self.layers(x)"];
   // A frozen backbone stays in eval mode so its BatchNorm statistics don't drift.
   const trainOverride = backbone
     ? `
@@ -164,7 +220,8 @@ print(f"사진 {len(dataset)}장, 클래스 {CLASSES}")`;
         return self`
     : "";
 
-  const model = `class TensorBlocksNet(nn.Module):
+  const usesLayerNorm2d = analysis.order.some((id) => nodes.find((n) => n.id === id).data.type === "layernorm" && analysis.nodeInfo[id].inShape?.length === 3);
+  const model = `${usesLayerNorm2d ? LAYER_NORM_2D : ""}class TensorBlocksNet(nn.Module):
     # 입력: 3×${size}×${size} (채널×세로×가로)
     def __init__(self):
         super().__init__()
@@ -181,7 +238,20 @@ optimizer = torch.optim.Adam([p for p in model.parameters() if p.requires_grad],
 print(f"학습할 값 {sum(p.numel() for p in model.parameters() if p.requires_grad):,}개")`;
 
   const target = backbone ? "model.head" : "model.layers";
-  const shapes = `# 블록마다 나오는 모양을 출력해요. TensorBlocks 캔버스의 모양과 같아야 해요.
+  const shapes = branched
+    ? `# 블록마다 나오는 모양을 출력해요. TensorBlocks 캔버스의 모양과 같아야 해요.
+def show_shape(name):
+    def hook(module, inputs, output):
+        print(f"{name:<20} → {tuple(output.shape[1:])}")
+    return hook
+
+hooks = [m.register_forward_hook(show_shape(name)) for name, m in model.named_children() if name != "backbone"]
+with torch.no_grad():
+    model.eval()
+    model(torch.zeros(1, 3, IMAGE_SIZE, IMAGE_SIZE, device=device))
+for h in hooks:
+    h.remove()`
+    : `# 블록마다 나오는 모양을 출력해요. TensorBlocks 캔버스의 모양과 같아야 해요.
 def show_shape(module, inputs, output):
     print(f"{module.__class__.__name__:<20} → {tuple(output.shape[1:])}")
 
@@ -440,6 +510,29 @@ ${t.save}
 
 // ── Keras ───────────────────────────────────────────────────
 
+// Skip connections need the functional API: each block is called on what feeds it.
+function kerasBranched(analysis, nodes, backbone) {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const { vars, blocks } = branchVars(analysis, backbone);
+  const out = ["x = inputs = keras.Input(shape=(IMAGE_SIZE, IMAGE_SIZE, 3))"];
+  if (backbone) {
+    if (backbone.keras.note) out.push(backbone.keras.note);
+    if (backbone.keras.pre) out.push(`x = layers.Lambda(${backbone.keras.pre})(x)`);
+    out.push(`${vars.get(analysis.order[1])} = base(x, training=False)`);
+  } else {
+    out.push("x = layers.Rescaling(1.0 / 255)(x)");
+  }
+  for (const id of blocks) {
+    const { type, params } = byId.get(id).data;
+    const from = analysis.inputsOf[id].map((s) => vars.get(s));
+    const shape = fmtShape(analysis.nodeInfo[id].outShape);
+    if (type === "add") out.push(`${vars.get(id)} = layers.Add()([${from.join(", ")}])  # → ${shape}`);
+    else out.push(`${vars.get(id)} = ${kerasLines(type, params)[0].replace(/,$/, "")}(${from[0]})  # ${LAYERS[type].name} → ${shape}`);
+  }
+  out.push(`model = keras.Model(inputs, ${vars.get(analysis.chain[analysis.chain.length - 1])})`);
+  return out.join("\n");
+}
+
 export function kerasCode(analysis, nodes, classes, settings) {
   if (analysis.kind === "vlm")
     return "# VLM(PaliGemma 2)은 Hugging Face의 PyTorch 모델이라 Keras 코드로는 내보내지 않아요.\n# PyTorch 코드나 Colab 노트북을 써 주세요.\n";
@@ -461,6 +554,12 @@ export function kerasCode(analysis, nodes, classes, settings) {
     layersOut.push(`# ${LAYERS[t].name} → ${fmtShape(info.outShape)}`, ...kerasLines(t, node.data.params));
   }
   const baseDef = backbone ? `base = ${backbone.keras.make}\nbase.trainable = False  # 사전학습 가중치는 고정\n\n` : "";
+  const modelDef = isBranched(analysis)
+    ? kerasBranched(analysis, nodes, backbone)
+    : `model = keras.Sequential([
+    keras.Input(shape=(IMAGE_SIZE, IMAGE_SIZE, 3)),
+${pad(layersOut, 4).join("\n")}
+])`;
 
   return `"""
 TensorBlocks에서 만든 모델을 그대로 옮긴 Keras 학습 코드예요.
@@ -486,10 +585,7 @@ train_ds, val_ds = keras.utils.image_dataset_from_directory(
 )
 NUM_CLASSES = len(train_ds.class_names)
 
-${baseDef}model = keras.Sequential([
-    keras.Input(shape=(IMAGE_SIZE, IMAGE_SIZE, 3)),
-${pad(layersOut, 4).join("\n")}
-])
+${baseDef}${modelDef}
 model.summary()
 model.compile(optimizer=keras.optimizers.Adam(LEARNING_RATE), loss="categorical_crossentropy", metrics=["accuracy"])
 model.fit(train_ds, validation_data=val_ds, epochs=EPOCHS)
@@ -577,15 +673,16 @@ for name in up:
 export function notebookCells(analysis, nodes, classes, settings, { photos = "embed" } = {}) {
   if (analysis.kind === "vlm") return vlmNotebookCells(analysis, nodes, classes, { photos });
   const t = torchParts(analysis, nodes, classes, settings);
-  const { chain } = describe(analysis, nodes);
+  const { order } = describe(analysis, nodes);
 
   const table = [
     "| 블록 | 나가는 모양 | 학습할 값 |",
     "|---|---|---|",
-    ...chain.map(({ node, info }) => {
+    ...order.map(({ node, info }) => {
       const def = LAYERS[node.data.type];
       const p = info.params ? `${fmtCount(info.params)}${def.frozen ? " (고정)" : ""}` : "–";
-      return `| ${def.name} (${def.ko}) | ${info.outShape ? fmtShape(info.outShape) : "?"} | ${p} |`;
+      const mark = analysis.chain.includes(node.id) ? "" : "↳ ";
+      return `| ${mark}${def.name} (${def.ko}) | ${info.outShape ? fmtShape(info.outShape) : "?"} | ${p} |`;
     }),
   ].join("\n");
 

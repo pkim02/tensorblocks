@@ -5,11 +5,26 @@ service cloud.firestore {
       function owner() {
         return request.auth != null && request.auth.uid == uid;
       }
+      function shortText(value) { return value is string && value.size() > 0 && value.size() <= 200; }
+      function validFields(f) {
+        return f == null || (f is map
+          && f.keys().hasAll(['image', 'question', 'answer', 'list'])
+          && f.keys().hasOnly(['image', 'question', 'answer', 'list'])
+          && shortText(f.image) && shortText(f.question) && shortText(f.answer)
+          && (f.list == null || shortText(f.list)));
+      }
+      function validDataset(d) {
+        return d is map && d.keys().hasAll(['repo', 'config', 'split', 'fields'])
+          && d.keys().hasOnly(['repo', 'config', 'split', 'fields'])
+          && shortText(d.repo) && (d.config == null || shortText(d.config))
+          && (d.split == null || shortText(d.split)) && validFields(d.fields);
+      }
       function validProject() {
         let d = request.resource.data;
         return d.keys().hasAll(['schemaVersion', 'name', 'createdAt', 'updatedAt', 'templateId', 'nodes', 'edges', 'classes', 'settings'])
-          && d.keys().hasOnly(['schemaVersion', 'name', 'createdAt', 'updatedAt', 'templateId', 'nodes', 'edges', 'classes', 'settings'])
-          && d.schemaVersion == 1
+          && d.keys().hasOnly(['schemaVersion', 'name', 'createdAt', 'updatedAt', 'templateId', 'nodes', 'edges', 'classes', 'settings', 'dataset'])
+          && d.schemaVersion in [1, 2]
+          && ((!('dataset' in d) && d.schemaVersion == 1) || ('dataset' in d && validDataset(d.dataset)))
           && d.name is string && d.name.size() > 0 && d.name.size() <= 100
           && (d.templateId == null || d.templateId is string)
           && d.nodes is list && d.nodes.size() <= 500

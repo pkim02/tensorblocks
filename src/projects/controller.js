@@ -2,6 +2,7 @@ import { createStore } from "zustand/vanilla";
 import { buildTemplate, newId, TEMPLATES } from "../model/graph.js";
 import { fingerprint, localFingerprint, projectName, restoreProject, serializeProject } from "./serialize.js";
 import { projectError } from "./repository.js";
+import { defaultDataset } from "../data/dataset.js";
 
 export function createProjectController({ app, auth, repository, dispose, stopTraining }) {
   const initial = () => ({
@@ -35,7 +36,9 @@ export function createProjectController({ app, auth, repository, dispose, stopTr
       camClassId: null,
       trained: null,
       demoData: false,
-      view: "main",
+      view: "canvas",
+      panel: "data",
+      dataset: defaultDataset(),
       projectRevision: s.projectRevision + 1,
       train: { status: s.train.status === "training" ? "training" : "idle", logs: [], message: "", epoch: 0 },
     });
@@ -90,7 +93,8 @@ export function createProjectController({ app, auth, repository, dispose, stopTr
       camClassId: null,
       trained: null,
       demoData: false,
-      view: "main",
+      view: "canvas",
+      panel: "data",
       projectRevision: app.getState().projectRevision + 1,
       train: { status: "idle", logs: [], message: "", epoch: 0 },
     });

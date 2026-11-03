@@ -64,19 +64,16 @@ Kit skin:
 
 ## Layout
 
-Left-aligned. Main screen follows Teachable Machine's left-to-right flow: data, model + training,
-preview. The block canvas opens full-screen from the model column.
+The block canvas is the first screen. Data, training and testing live in tabs beside it, and the
+primary action stays pinned under them. A classifier's data is classes of photos; a VLM's is a
+dataset of photo + question + answer.
 
 ```
-┌ TensorBlocks ─────────────────────────────────────────────┐
-│ 데이터 (classes)   │  모델 + 학습        │  미리보기          │
-│ [Class 1 ▢▢▢▢]    │  Input 64×64×3      │  [webcam]          │
-│ [Class 2 ▢▢▢▢]    │   │ 64×64×16        │  Class 1 ████ 82%  │
-│ + 클래스 추가       │  Conv2D …          │  모델 속 보기 ▦▦▦   │
-│                    │  [블록 캔버스 열기] │  [코드 내보내기]     │
-│                    │  [학습시키기]       │                    │
-└────────────────────────────────────────────────────────────┘
-Canvas: palette (left) · graph-paper canvas (centre) · inspector (right)
+┌ TensorBlocks [블록|3D|Colab 코드] [모델 틀 ▾]          모양이 맞아요 ┐
+│ 블록 상자 │ graph-paper canvas        │ 1 데이터 │ 2 학습 │ 3 시험 │ 블록 │
+│ Conv2D    │ Input ─64×64×3─▶ Conv2D … │ tab content               │
+│ Dense …   │                           │ [학습시키기]              │
+└────────────────────────────────────────────────────────────────────┘
 On the canvas the model runs left to right: Input ─64×64×3─▶ Conv2D ─▶ … ─▶ Output.
 Correction notes hang under the broken line.
 ```

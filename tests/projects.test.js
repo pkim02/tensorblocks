@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createStore } from "zustand/vanilla";
-import { analyze, buildTemplate, TEMPLATES } from "../src/model/graph.js";
+import { defaultDataset } from "../src/data/dataset.js";
+import { analyze, buildTemplate, makeNode, makeEdge, TEMPLATES } from "../src/model/graph.js";
 import { serializeProject, restoreProject, fingerprint, projectName } from "../src/projects/serialize.js";
 import { createProjectController } from "../src/projects/controller.js";
 import { createProjectRepository, projectError } from "../src/projects/repository.js";
@@ -15,6 +16,7 @@ function workspace(template = TEMPLATES.find((t) => t.id === "tm")) {
       { id: "c1", name: "첫 번째", samples: [] },
     ],
     settings: { epochs: 20, batchSize: 16, learningRate: 0.001 },
+    dataset: defaultDataset(),
     train: { status: "idle", logs: [] },
     trained: null,
     demoData: false,
@@ -90,7 +92,7 @@ test("serialization never touches canvas / trained objects or transient flow fie
   assert.deepEqual(restoreProject(JSON.parse(json)).classes[0].samples, []);
 });
 test("invalid versions, graph references, IDs, params, settings and oversized data are rejected", () => {
-  assert.throws(() => restoreProject({ ...saved(), schemaVersion: 2 }));
+  assert.throws(() => restoreProject({ ...saved(), schemaVersion: 99 }));
   for (const mutate of [
     (s) => {
       s.edges[0].source = "missing";
@@ -310,4 +312,89 @@ test("logout clears a previously saved project, fetched list and pending confirm
   assert.equal(state().pending, null);
   c.confirmLoad();
   assert.equal(state().id, null);
+});
+
+test("v2 preserves lightweight dataset selection and fields, excluding preview rows and images", () => {
+  const s = workspace();
+  const cyclic = {};
+  cyclic.self = cyclic;
+  s.dataset = {
+    repo: "team/qa",
+    config: "subset",
+    split: "validation",
+    fields: { image: "photo", question: "q", answer: "a", list: "turns" },
+    preview: cyclic,
+    images: cyclic,
+  };
+  const data = serializeProject(s);
+  assert.equal(data.schemaVersion, 2);
+  assert.deepEqual(data.dataset, {
+    repo: "team/qa",
+    config: "subset",
+    split: "validation",
+    fields: { image: "photo", question: "q", answer: "a", list: "turns" },
+  });
+  assert.deepEqual(restoreProject(data).dataset, data.dataset);
+  assert.ok(!JSON.stringify(data).includes("preview"));
+});
+
+test("legacy v1 documents migrate to v2 with safe defaults, not the current user's dataset", async () => {
+  const legacy = saved();
+  delete legacy.dataset;
+  legacy.schemaVersion = 1;
+  const restored = restoreProject(legacy);
+  assert.equal(restored.schemaVersion, 2);
+  assert.deepEqual(restored.dataset, defaultDataset());
+  const { app, controller: c, state } = setup({ load: async () => legacy });
+  app.setState({ view: "three", panel: "test", dataset: { ...defaultDataset(), repo: "private/old-selection" } });
+  await c.load("legacy");
+  c.confirmLoad();
+  assert.equal(state().id, "legacy");
+  assert.equal(app.getState().view, "canvas");
+  assert.equal(app.getState().panel, "data");
+  assert.deepEqual(app.getState().dataset, defaultDataset());
+});
+
+test("malformed dataset metadata and v2 documents missing dataset are rejected", () => {
+  const missing = saved();
+  delete missing.dataset;
+  assert.throws(() => restoreProject(missing));
+  for (const dataset of [
+    null,
+    { ...defaultDataset(), repo: "https://example.com/photo.jpg" },
+    { ...defaultDataset(), fields: { image: {}, question: "q", answer: "a", list: null } },
+    { ...defaultDataset(), split: 123 },
+  ]) {
+    assert.throws(() => serializeProject({ ...workspace(), dataset }));
+  }
+});
+
+test("dataset selection changes are dirty and account transitions reset v2 panels and metadata", async () => {
+  const { app, auth, controller: c } = setup();
+  c.setName("모델");
+  await c.save();
+  app.setState({ dataset: { ...defaultDataset(), split: "validation" } });
+  assert.equal(c.dirty(), true);
+  app.setState({ view: "code", panel: "block", selectedId: "old" });
+  auth.setState({ user: { uid: "bob" } });
+  assert.equal(app.getState().view, "canvas");
+  assert.equal(app.getState().panel, "data");
+  assert.equal(app.getState().selectedId, null);
+  assert.deepEqual(app.getState().dataset, defaultDataset());
+});
+
+test("skip connections, nested Add and three incoming edges survive round-trip with original IDs", () => {
+  const s = workspace(TEMPLATES.find((t) => t.id === "resnet"));
+  const add = s.nodes.find((n) => n.data.type === "add");
+  const conv = s.nodes.find((n) => n.data.type === "conv2d");
+  const extra = makeNode("conv2d", { x: 100, y: 400 }, { filters: 16 });
+  const nested = makeNode("add", { x: 300, y: 400 });
+  s.nodes.push(extra, nested);
+  s.edges.push(makeEdge(s.nodes[0].id, extra.id), makeEdge(extra.id, nested.id), makeEdge(conv.id, nested.id), makeEdge(nested.id, add.id));
+  const before = serializeProject(s);
+  const restored = restoreProject(JSON.parse(JSON.stringify(before)));
+  assert.deepEqual(serializeProject(restored), before);
+  assert.equal(restored.edges.filter((e) => e.target === add.id).length, 3);
+  assert.equal(restored.edges.filter((e) => e.target === nested.id).length, 2);
+  assert.ok(restored.edges.filter((e) => e.source === conv.id).length > 1);
 });

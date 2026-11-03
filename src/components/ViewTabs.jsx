@@ -12,9 +12,7 @@ export default function ViewTabs() {
   const setView = useApp((s) => s.setView);
   return (
     <>
-      <button className="btn ghost small" onClick={() => setView("main")}>
-        ← 처음 화면
-      </button>
+      <span className="brand">TensorBlocks</span>
       <nav className="view-tabs" aria-label="모델 보기">
         {VIEWS.map(([id, label]) => (
           <button key={id} aria-current={view === id ? "page" : undefined} onClick={() => setView(id)}>

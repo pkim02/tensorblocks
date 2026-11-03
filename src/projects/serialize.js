@@ -1,6 +1,7 @@
 import { LAYERS } from "../model/layers.js";
+import { defaultDataset } from "../data/dataset.js";
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 export const MAX_BYTES = 700_000; // Leave room for Firestore metadata and field names.
 const invalid = () => {
   throw new Error("프로젝트 데이터 형식이 올바르지 않아요.");
@@ -9,6 +10,20 @@ const record = (v) => v && typeof v === "object" && !Array.isArray(v);
 const text = (v, max = 200) => typeof v === "string" && v.length > 0 && v.length <= max;
 const id = (v) => text(v, 150) && !v.includes("/");
 const finite = (v) => typeof v === "number" && Number.isFinite(v);
+
+function serializeDataset(dataset = defaultDataset()) {
+  if (!record(dataset) || !text(dataset.repo, 200) || !/^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)?$/.test(dataset.repo)) invalid();
+  if (dataset.repo.split("/").some((s) => s === "." || s === "..")) invalid();
+  for (const key of ["config", "split"]) if (dataset[key] !== null && !text(dataset[key], 200)) invalid();
+  let fields = null;
+  if (dataset.fields !== null) {
+    if (!record(dataset.fields)) invalid();
+    for (const key of ["image", "question", "answer"]) if (!text(dataset.fields[key], 200)) invalid();
+    if (dataset.fields.list !== null && !text(dataset.fields.list, 200)) invalid();
+    fields = Object.fromEntries(["image", "question", "answer", "list"].map((key) => [key, dataset.fields[key]]));
+  }
+  return { repo: dataset.repo, config: dataset.config, split: dataset.split, fields };
+}
 
 export function projectName(value) {
   if (typeof value !== "string" || !text(value.trim(), 100)) throw new Error("프로젝트 이름을 1~100자로 입력해 주세요.");
@@ -62,14 +77,23 @@ export function serializeProject(state) {
   )
     invalid();
   if (state.templateId !== null && !text(state.templateId, 100)) invalid();
-  const result = { schemaVersion: SCHEMA_VERSION, templateId: state.templateId, nodes, edges, classes, settings: { epochs, batchSize, learningRate } };
+  const result = {
+    schemaVersion: SCHEMA_VERSION,
+    templateId: state.templateId,
+    nodes,
+    edges,
+    classes,
+    settings: { epochs, batchSize, learningRate },
+    dataset: serializeDataset(state.dataset),
+  };
   if (new TextEncoder().encode(JSON.stringify(result)).length > MAX_BYTES)
     throw new Error("프로젝트가 너무 커서 저장할 수 없어요. 블록이나 긴 설정을 줄여 주세요.");
   return result;
 }
 
 export function restoreProject(data) {
-  if (data?.schemaVersion !== SCHEMA_VERSION) throw new Error("지원하지 않는 프로젝트 버전이에요.");
+  if (![1, SCHEMA_VERSION].includes(data?.schemaVersion)) throw new Error("지원하지 않는 프로젝트 버전이에요.");
+  if (data.schemaVersion === SCHEMA_VERSION && !record(data.dataset)) invalid();
   const value = serializeProject(data);
   return {
     ...value,

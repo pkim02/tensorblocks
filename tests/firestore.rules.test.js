@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
-import { doc, getDoc, getDocs, collection, setDoc, updateDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, getDocs, collection, setDoc, updateDoc, deleteDoc, deleteField, serverTimestamp } from "firebase/firestore";
+import { restoreProject } from "../src/projects/serialize.js";
 import { buildTemplate, TEMPLATES } from "../src/model/graph.js";
 import { serializeProject } from "../src/projects/serialize.js";
 import { createProjectRepository } from "../src/projects/repository.js";
@@ -92,8 +93,39 @@ test("Firestore emulator: actual rules and SDK repository", { timeout: 20000, sk
       const loaded = await repository.load("alice", id);
       assert.equal(loaded.name, "수정");
       assert.deepEqual(loaded.edges, data.edges);
+      assert.deepEqual(loaded.dataset, data.dataset);
       assert.ok(loaded.createdAt.toMillis());
       assert.ok((await repository.list("alice")).some((p) => p.id === id));
+    });
+    await t.test("v1 remains readable and upgrades to v2 without changing creation time", async () => {
+      const legacy = { ...data, schemaVersion: 1 };
+      delete legacy.dataset;
+      const ref = doc(alice, "users/alice/projects/legacy");
+      await assertSucceeds(setDoc(ref, legacy));
+      const before = (await getDoc(ref)).data();
+      const restored = restoreProject(before);
+      const auth = createStore(() => ({ ready: true, user: { uid: "alice" } }));
+      const repository = createProjectRepository(
+        alice.app,
+        auth,
+        () => true,
+        () => alice,
+      );
+      await repository.save("alice", "legacy", "v2", restored);
+      const after = (await getDoc(ref)).data();
+      assert.equal(after.schemaVersion, 2);
+      assert.equal(after.createdAt.toMillis(), before.createdAt.toMillis());
+    });
+    await t.test("v2 requires bounded metadata and rejects image/preview fields", async () => {
+      const ref = doc(alice, "users/alice/projects/p1");
+      await assertFails(updateDoc(ref, { dataset: deleteField(), updatedAt: serverTimestamp() }));
+      for (const dataset of [
+        { ...data.dataset, repo: "x".repeat(201) },
+        { ...data.dataset, preview: [] },
+        { ...data.dataset, fields: { image: "photo", question: "q", answer: "a", list: null, images: [] } },
+        { ...data.dataset, config: 42 },
+      ])
+        await assertFails(updateDoc(ref, { dataset, updatedAt: serverTimestamp() }));
     });
   } finally {
     await env.cleanup();
