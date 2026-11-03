@@ -36,6 +36,12 @@ export function getDriveToken() {
   return Date.now() < driveTokenExpiresAt ? driveToken : null;
 }
 
+// Drive rejected the token, so the next upload has to sign in again.
+export function clearDriveToken() {
+  driveToken = null;
+  driveTokenExpiresAt = 0;
+}
+
 const CANCELLED = ["auth/popup-closed-by-user", "auth/cancelled-popup-request"];
 
 const MESSAGES = {
@@ -59,7 +65,6 @@ export async function signIn() {
 }
 
 export async function signOutUser() {
-  driveToken = null;
-  driveTokenExpiresAt = 0;
+  clearDriveToken();
   if (auth) await signOut(auth);
 }

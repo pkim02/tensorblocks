@@ -1,6 +1,8 @@
 import { Fragment, useMemo, useState } from "react";
 import { useApp, useAnalysis } from "../store.js";
-import { notebookCells, downloadNotebook, pytorchCode, kerasCode, downloadText, downloadZip } from "../export/code.js";
+import { notebookCells, notebookJSON, downloadNotebook, pytorchCode, kerasCode, downloadText, downloadZip } from "../export/code.js";
+import { colabUrl, uploadNotebook } from "../export/drive.js";
+import { clearDriveToken, getDriveToken, isAuthConfigured, signIn, useAuth } from "../auth/google.js";
 import ViewTabs from "./ViewTabs.jsx";
 
 const COLAB = "https://colab.research.google.com/";
@@ -14,6 +16,10 @@ export default function CodeView() {
   const setView = useApp((s) => s.setView);
   const [fmt, setFmt] = useState("nb");
   const [zipping, setZipping] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [blockedUrl, setBlockedUrl] = useState(null);
+  const user = useAuth((s) => s.user);
+  const hasDriveToken = !!getDriveToken();
   const photos = classes.reduce((n, c) => n + c.samples.length, 0);
   const vlm = a.kind === "vlm";
 
@@ -27,6 +33,39 @@ export default function CodeView() {
   const openColab = () => {
     getNotebook();
     window.open(COLAB, "_blank", "noopener");
+  };
+  const signInForDrive = async () => {
+    setUploading(true);
+    try {
+      if (await signIn()) window.kit?.toast("로그인했어요. 버튼을 한 번 더 누르면 Colab이 열려요.");
+    } catch (err) {
+      window.kit?.toast(err.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+  const openInColab = async () => {
+    setBlockedUrl(null);
+    const token = getDriveToken();
+    if (!token) return signInForDrive();
+    // Browsers block tabs opened after a wait, so open it now and point it at Colab once the upload is done.
+    const tab = window.open("", "_blank");
+    setUploading(true);
+    try {
+      const url = colabUrl(await uploadNotebook(notebookJSON(a, nodes, classes, settings), token));
+      if (tab) {
+        tab.opener = null;
+        tab.location.href = url;
+      } else {
+        setBlockedUrl(url);
+      }
+    } catch (err) {
+      tab?.close();
+      if (err.needsSignIn) clearDriveToken();
+      window.kit?.toast(err.message);
+    } finally {
+      setUploading(false);
+    }
   };
   const copy = async () => {
     try {
@@ -61,16 +100,40 @@ export default function CodeView() {
           {a.ok ? (
             <>
               <ol className="colab-steps">
-                <li>
-                  <button className="btn primary block" onClick={openColab}>
-                    노트북 받고 Colab 열기
-                  </button>
-                  <span className="small muted">tensorblocks.ipynb 파일을 받고 Colab을 새 탭으로 열어요.</span>
-                </li>
-                <li>
-                  Colab의 <strong>노트북 열기</strong> 창에서 <strong>업로드</strong>를 누르고 받은 파일을 골라요. 창이 안 보이면 메뉴의{" "}
-                  <strong>파일 → 노트북 업로드</strong>예요.
-                </li>
+                {isAuthConfigured ? (
+                  <li>
+                    <button className="btn primary block" onClick={openInColab} aria-busy={uploading} disabled={uploading}>
+                      {hasDriveToken ? "Colab에서 바로 열기" : user ? "Google 다시 로그인" : "Google 로그인"}
+                    </button>
+                    <span className="small muted">
+                      {hasDriveToken
+                        ? "노트북을 내 Google Drive에 저장하고 Colab을 새 탭으로 열어요."
+                        : "Colab에 바로 열려면 로그인이 필요해요. 이 앱이 만든 파일만 Drive에 저장하고 읽어요."}
+                    </span>
+                    {blockedUrl && (
+                      <span className="small">
+                        {" "}
+                        새 탭이 차단됐어요.{" "}
+                        <a href={blockedUrl} target="_blank" rel="noreferrer">
+                          저장한 노트북 열기
+                        </a>
+                      </span>
+                    )}
+                  </li>
+                ) : (
+                  <>
+                    <li>
+                      <button className="btn primary block" onClick={openColab}>
+                        노트북 받고 Colab 열기
+                      </button>
+                      <span className="small muted">tensorblocks.ipynb 파일을 받고 Colab을 새 탭으로 열어요.</span>
+                    </li>
+                    <li>
+                      Colab의 <strong>노트북 열기</strong> 창에서 <strong>업로드</strong>를 누르고 받은 파일을 골라요. 창이 안 보이면 메뉴의{" "}
+                      <strong>파일 → 노트북 업로드</strong>예요.
+                    </li>
+                  </>
+                )}
                 {vlm && <li>처음 한 번은 Hugging Face에서 PaliGemma 약관에 동의하고 토큰을 넣어야 해요. 방법은 노트북 1번 칸에 있어요.</li>}
                 <li>
                   메뉴의 <strong>런타임 → 모두 실행</strong>을 누르면 {vlm ? "구글 PaliGemma 2를 받아서 내 사진에 질문해요." : "학습이 시작돼요."}
@@ -82,6 +145,7 @@ export default function CodeView() {
               </p>
               <div className="code-more">
                 <h2 className="small">다른 방법으로 받기</h2>
+                {isAuthConfigured && <p className="small muted">로그인 없이 쓰려면 노트북을 받아서 Colab의 노트북 열기 → 업로드로 올려요.</p>}
                 <button className="btn outline small" onClick={getNotebook}>
                   노트북만 받기 (.ipynb)
                 </button>
