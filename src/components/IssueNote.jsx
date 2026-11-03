@@ -12,8 +12,8 @@ export default function IssueNote({ issue, compact = false, className = "", styl
       role={issue.level === "error" ? "alert" : undefined}
       onClick={(e) => e.stopPropagation()}
     >
-      <p className="note-title">{issue.title}</p>
-      <p className="note-text">{issue.text}</p>
+      <p className="note-title" style={{ paddingInline: "var(--space-1)" }}>{issue.title}</p>
+      <p className="note-text" style={{ paddingInline: "var(--space-1)" }}>{issue.text}</p>
       {issue.fixes?.length > 0 && (
         <div className="note-fixes">
           {issue.fixes.map((f, i) => (
@@ -60,8 +60,50 @@ function AiTutor({ issue }) {
   return <TutorRequest key={payload} payload={payload} />;
 }
 
+const SECTIONS = [
+  { key: "why", label: "왜 발생했나요", color: "var(--danger-11)" },
+  { key: "shape", label: "shape 비교", color: "var(--text-muted)" },
+  { key: "fix", label: "어떻게 고치나요", color: "var(--accent-11)" },
+];
+
+// Render only **bold** and `code` marks as React elements — never raw HTML.
+function Inline({ text }) {
+  return text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean).map((part, i) => {
+    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
+      return <strong key={i} style={{ fontWeight: 700, background: "var(--warning-3, transparent)", borderRadius: 2, paddingInline: 2 }}>{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith("`") && part.endsWith("`") && part.length > 2) {
+      return <code key={i} style={{ fontFamily: "var(--font-mono)", fontSize: "0.92em", background: "var(--gray-3)", borderRadius: 3, padding: "0 3px", whiteSpace: "nowrap" }}>{part.slice(1, -1)}</code>;
+    }
+    return part;
+  });
+}
+
+function Explanation({ data }) {
+  return (
+    <div style={{ marginTop: "var(--space-3)", paddingInline: "var(--space-1)", overflowWrap: "anywhere", maxHeight: "22rem", overflowY: "auto", userSelect: "text" }}>
+      {data.summary && (
+        <p style={{ margin: "0 0 var(--space-3)", fontWeight: 600, lineHeight: 1.45, paddingInlineStart: "var(--space-2)", borderInlineStart: "3px solid var(--danger-9)" }}>
+          <Inline text={data.summary} />
+        </p>
+      )}
+      {SECTIONS.filter((s) => data[s.key]?.length).map((s) => (
+        <section key={s.key} style={{ marginTop: "var(--space-3)" }}>
+          <h4 style={{ margin: "0 0 var(--space-1)", fontSize: 11, fontWeight: 700, letterSpacing: "0.02em", color: s.color }}>{s.label}</h4>
+          <ul style={{ margin: 0, paddingInlineStart: "1.1em", display: "flex", flexDirection: "column", gap: 2 }}>
+            {data[s.key].map((line, i) => <li key={i} style={{ lineHeight: 1.5 }}><Inline text={line} /></li>)}
+          </ul>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+const isExplanation = (x) => x && typeof x === "object" && typeof x.summary === "string" &&
+  SECTIONS.every((s) => Array.isArray(x[s.key]) && x[s.key].every((l) => typeof l === "string"));
+
 function TutorRequest({ payload }) {
-  const [state, setState] = useState({ status: "idle", text: "" });
+  const [state, setState] = useState({ status: "idle", text: "", data: null });
   const active = useRef(null);
   useEffect(() => () => active.current?.abort(), []);
 
@@ -69,7 +111,7 @@ function TutorRequest({ payload }) {
     if (active.current) return;
     const controller = new AbortController();
     active.current = controller;
-    setState({ status: "loading", text: "" });
+    setState({ status: "loading", text: "", data: null });
     const timeout = setTimeout(() => controller.abort("timeout"), 25000);
     try {
       const response = await fetch("/.netlify/functions/gemini-tutor", {
@@ -77,11 +119,11 @@ function TutorRequest({ payload }) {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "AI 설명을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.");
-      if (typeof data.explanation !== "string" || !data.explanation.trim()) throw new Error("AI 설명이 비어 있어요. 다시 시도해 주세요.");
-      if (!controller.signal.aborted) setState({ status: "done", text: data.explanation });
+      if (!isExplanation(data.explanation)) throw new Error("AI 설명이 비어 있어요. 다시 시도해 주세요.");
+      if (!controller.signal.aborted) setState({ status: "done", text: "", data: data.explanation });
     } catch (error) {
       if (!controller.signal.aborted || controller.signal.reason === "timeout") {
-        setState({ status: "error", text: controller.signal.aborted ? "응답 시간이 길어졌어요. 다시 시도해 주세요." : error.message });
+        setState({ status: "error", data: null, text: controller.signal.aborted ? "응답 시간이 길어졌어요. 다시 시도해 주세요." : error.message });
       }
     } finally {
       clearTimeout(timeout);
@@ -90,14 +132,19 @@ function TutorRequest({ payload }) {
   }
 
   return (
-    <div className="nodrag nopan" style={{ marginTop: "var(--space-3)", minWidth: 0 }} onPointerDown={(e) => e.stopPropagation()}>
-      <button type="button" className="btn small outline" style={{ whiteSpace: "normal", height: "auto", minHeight: "var(--control-h-sm)" }} onClick={ask} disabled={state.status === "loading"}>
+    <div className="nodrag nopan" style={{ marginTop: "var(--space-3)", minWidth: 0, textAlign: "start" }} onPointerDown={(e) => e.stopPropagation()}>
+      <button type="button" className="btn small outline" style={{ whiteSpace: "normal", height: "auto", minHeight: "var(--control-h-sm)", padding: "var(--space-1) var(--space-2)", justifyContent: "flex-start", textAlign: "start" }} onClick={ask} disabled={state.status === "loading"}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false" style={{ flexShrink: 0 }}>
+          <path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z" />
+          <path d="M20 2v4m-2-2h4" />
+        </svg>
         {state.status === "loading" ? "AI가 설명하고 있어요…" : state.status === "error" ? "AI에게 다시 묻기" : "AI에게 묻기"}
       </button>
-      <div aria-live="polite" aria-busy={state.status === "loading"}>
-        {state.text && <p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: "18rem", overflowY: "auto", fontSize: "var(--step--1)", lineHeight: 1.6, userSelect: "text" }}>{state.text}</p>}
+      <div aria-live="polite" aria-busy={state.status === "loading"} style={{ minWidth: 0 }}>
+        {state.data && <Explanation data={state.data} />}
+        {state.status === "error" && state.text && <p role="status" style={{ margin: "var(--space-2) 0 0", paddingInline: "var(--space-1)", color: "var(--danger-11)", fontSize: 12 }}>{state.text}</p>}
       </div>
-      {state.status === "done" && <p style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 0 }}>AI가 생성한 참고 설명이에요. 에러 판정은 기존 규칙을 따릅니다.</p>}
+      {state.status === "done" && <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "var(--space-3) 0 0", paddingTop: "var(--space-2)", paddingInline: "var(--space-1)", borderTop: "1px dashed var(--border)" }}>AI가 생성한 참고 설명이에요. 에러 판정은 기존 규칙을 따릅니다.</p>}
     </div>
   );
 }
