@@ -69,9 +69,21 @@ npm run dev
 ## 같이 작업할 때
 
 - `main`에 바로 올리지 말고 브랜치를 만들어서 PR로 합쳐요.
-- 올리기 전에 `npx prettier --write src`로 코드 모양을 맞춰요 (`.prettierrc`에 설정 있음).
+- 올리기 전에 `npx prettier@3.9.10 --write src`로 코드 모양을 맞춰요 (`.prettierrc`에 설정 있음). 버전(`@3.9.10`)을 붙여야 모두 같은 모양이 나와요. `src/styles.css`는 일부러 빼 두었어요 (`.prettierignore`).
+  - 실행 후 `git status`로 확인해서, 내가 작업하지 않은 파일이 바뀌었으면 `git restore 파일경로`로 되돌리고 올려 주세요.
 - 화면은 라이트 모드 전용이에요 (`index.html`의 `data-mode="light"`).
 - 배포: `main`에 push(또는 PR 합치기)하면 1~2분 뒤 https://tensorblocks.netlify.app 에 자동으로 올라가요. 그러니 `main`에는 잘 돌아가는 것만 합쳐 주세요. 급할 때는 `npm run deploy`로 직접 올릴 수도 있어요 (Netlify HAPE 팀 로그인 필요).
+
+### 머지하기 전 확인할 것
+
+PR은 다른 팀원 한 명이 보고 **Approve**하면, 올린 사람이 직접 머지해요.
+
+1. 최신 `main`을 내 브랜치에 받아요 (`git pull origin main`). 충돌이 나면 내 브랜치에서 풀고 다시 올려요.
+2. `npm run build`가 에러 없이 끝나요.
+3. `npm run dev`로 열어서 내가 바꾼 부분이 되고, 다른 화면(데이터·학습·미리보기, 블록·3D·Colab 코드 탭)도 하얀 화면 없이 열려요. 브라우저 콘솔에 빨간 에러가 없어요.
+4. PR의 **Files changed**에 내가 작업한 파일만 있어요 (prettier가 바꾼 남의 파일이나 `.env`가 섞이지 않게).
+5. `package.json`을 바꿨으면 `package-lock.json`도 같이 올려요.
+6. 머지하고 1~2분 뒤 https://tensorblocks.netlify.app 를 열어 확인해요. 깨졌으면 PR 페이지 아래의 **Revert** 버튼으로 바로 되돌리고 팀 채팅에 알려 주세요.
 
 ## 기술
 
