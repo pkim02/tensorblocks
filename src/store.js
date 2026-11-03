@@ -32,20 +32,21 @@ export const useApp = create((set, get) => ({
   onEdgesChange: (changes) => set((s) => ({ edges: applyEdgeChanges(changes, s.edges) })),
   onConnect: ({ source, target }) => {
     if (source === target) return;
-    // One way in, one way out: a new link replaces the old ones on both ends. A merge
-    // block (Concat) keeps up to two ways in.
+    // One way in: a new link replaces the old one. A merge block (Concat, Add) keeps up to
+    // two ways in. A block's output can fork, so its other links stay.
     set((s) => {
-      const merge = LAYERS[s.nodes.find((n) => n.id === target)?.data.type]?.merge;
-      let edges = s.edges.filter((e) => e.source !== source && (merge || e.target !== target));
-      // Already two ways in: keep the main line and swap out the side one.
-      if (merge && edges.filter((e) => e.target === target).length >= 2) {
+      const def = LAYERS[s.nodes.find((n) => n.id === target)?.data.type];
+      const merge = def?.merge;
+      let edges = s.edges.filter((e) => e.target !== target || (merge && e.source !== source));
+      // Already as many ways in as it takes: keep the main line and swap out the side one.
+      if (merge && edges.filter((e) => e.target === target).length >= (def.maxInputs ?? 2)) {
         const keep = mainInto({ ...s, edges }, target);
         edges = edges.filter((e) => e.target !== target || e === keep);
       }
       return { templateId: null, edges: [...edges, makeEdge(source, target)] };
     });
   },
-  select: (selectedId) => set({ selectedId }),
+  select: (selectedId) => set((s) => ({ selectedId, panel: selectedId ? "block" : s.panel })),
 
   loadTemplate: (id) => {
     const t = TEMPLATES.find((x) => x.id === id);
@@ -93,9 +94,11 @@ export const useApp = create((set, get) => ({
     const from = s.nodes.find((n) => n.id === nodeId);
     const node = makeNode(type, { x: from.position.x + GAP_X, y: from.position.y });
     const outs = s.edges.filter((e) => e.source === nodeId);
+    // A fork keeps its branches; only a single link moves behind the new block.
+    const moved = outs.length === 1 ? outs : [];
     set({
       nodes: [...s.nodes, node],
-      edges: [...s.edges.filter((e) => e.source !== nodeId), makeEdge(nodeId, node.id), ...outs.map((e) => makeEdge(node.id, e.target))],
+      edges: [...s.edges.filter((e) => !moved.includes(e)), makeEdge(nodeId, node.id), ...moved.map((e) => makeEdge(node.id, e.target))],
       selectedId: node.id,
       templateId: null,
     });
@@ -107,9 +110,11 @@ export const useApp = create((set, get) => ({
     const node = s.nodes.find((n) => n.id === nodeId);
     if (!node || node.deletable === false) return;
     const into = mainInto(s, nodeId);
-    const outOf = s.edges.find((e) => e.source === nodeId);
     const edges = s.edges.filter((e) => e.source !== nodeId && e.target !== nodeId);
-    if (into && outOf) edges.push(makeEdge(into.source, outOf.target));
+    // Joins every outgoing link back up, unless that link already exists (the other side of a skip).
+    for (const out of s.edges.filter((e) => e.source === nodeId)) {
+      if (into && !edges.some((e) => e.source === into.source && e.target === out.target)) edges.push(makeEdge(into.source, out.target));
+    }
     set({ nodes: s.nodes.filter((n) => n.id !== nodeId), edges, selectedId: s.selectedId === nodeId ? null : s.selectedId, templateId: null });
     get().tidy();
   },
@@ -130,7 +135,7 @@ export const useApp = create((set, get) => ({
     switch (action.kind) {
       case "insertBefore": {
         const main = mainInto(s, nodeId);
-        const into = action.side ? s.edges.find((e) => e.target === nodeId && e !== main) : main;
+        const into = action.side ? s.edges.filter((e) => e.target === nodeId && e !== main)[action.sideIndex ?? 0] : main;
         if (into) get().insertOnEdge(into.id, action.type, action.params && makeNode(action.type, { x: 0, y: 0 }, action.params));
         break;
       }
@@ -195,8 +200,14 @@ export const useApp = create((set, get) => ({
 
   // View ----------------------------------------------------------------------
   demoData: false,
-  view: "main",
+  view: "canvas",
   setView: (view) => set({ view }),
+  panel: "data",
+  setPanel: (panel) => set({ panel }),
+
+  // VLM data: `fields` says which columns hold the photo, question and answer once read.
+  dataset: { repo: "HuggingFaceM4/the_cauldron", config: "cocoqa", split: "train", fields: null },
+  setDataset: (patch) => set((s) => ({ dataset: { ...s.dataset, ...patch } })),
 }));
 
 export const useAnalysis = () => {

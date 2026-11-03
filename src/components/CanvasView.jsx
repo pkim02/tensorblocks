@@ -15,8 +15,11 @@ import {
 import { useApp, useAnalysis } from "../store.js";
 import { LAYERS, PALETTE, fmtShape, fmtCount, torchLines, torchShape } from "../model/layers.js";
 import { TEMPLATES, NODE_W } from "../model/graph.js";
+import AuthButton from "./AuthButton.jsx";
 import IssueNote from "./IssueNote.jsx";
 import ViewTabs from "./ViewTabs.jsx";
+import WorkPanel from "./WorkPanel.jsx";
+import { fieldPath } from "../data/hf.js";
 
 const DRAG_TYPE = "application/x-tensorblock";
 
@@ -63,8 +66,8 @@ export default function CanvasView() {
         const ns = rf.getNodes();
         if (!el || !ns.length) return;
         const b = rf.getNodesBounds(ns);
-        const pad = 48;
-        const zoom = Math.max(0.8, Math.min(1, (el.clientWidth - 2 * pad) / b.width));
+        const pad = 32;
+        const zoom = Math.max(0.45, Math.min(1, (el.clientWidth - 2 * pad) / b.width));
         const fits = b.width * zoom <= el.clientWidth - 2 * pad;
         const x = fits ? (el.clientWidth - b.width * zoom) / 2 - b.x * zoom : pad - b.x * zoom;
         const y = el.clientHeight * 0.38 - (b.y + b.height / 2) * zoom;
@@ -99,22 +102,10 @@ export default function CanvasView() {
       <header className="work-bar">
         <ViewTabs />
         <h1 className="visually-hidden">블록 캔버스</h1>
-        {errors || warns ? (
-          <button className={`badge badge-btn ${errors ? "danger" : "warning"}`} onClick={showProblem} role="status">
-            {errors ? `고칠 곳 ${errors}개` : `주의 ${warns}개`} 보기
-          </button>
-        ) : (
-          <span className="badge success" role="status">
-            모양이 모두 맞아요
-          </span>
-        )}
-        <span className="small muted bar-params">
-          학습할 값 <span className="num-inline">{fmtCount(a.trainableParams)}</span>개
-        </span>
-        <span className="grow" />
         <select
           aria-label="모델 틀 불러오기"
           value={templateId ?? ""}
+          disabled={training}
           onChange={(e) => {
             loadTemplate(e.target.value);
             fit();
@@ -127,6 +118,19 @@ export default function CanvasView() {
             </option>
           ))}
         </select>
+        <span className="grow" />
+        {errors || warns ? (
+          <button className={`badge badge-btn ${errors ? "danger" : "warning"}`} onClick={showProblem} role="status">
+            {errors ? `고칠 곳 ${errors}개` : `주의 ${warns}개`} 보기
+          </button>
+        ) : (
+          <span className="badge success" role="status">
+            모양이 모두 맞아요
+          </span>
+        )}
+        <span className="small muted bar-params">
+          학습할 값 <span className="num-inline">{fmtCount(a.trainableParams)}</span>개
+        </span>
         <button
           className="btn outline small"
           onClick={() => {
@@ -136,6 +140,7 @@ export default function CanvasView() {
         >
           한 줄로 정렬
         </button>
+        <AuthButton />
       </header>
 
       <div className="canvas-body">
@@ -164,7 +169,7 @@ export default function CanvasView() {
             <MiniMap pannable zoomable ariaLabel="모델 전체 지도" nodeStrokeWidth={2} />
           </ReactFlow>
         </div>
-        <Inspector />
+        <WorkPanel inspector={<Inspector />} />
       </div>
     </div>
   );
@@ -201,6 +206,12 @@ function Palette({ onAdd }) {
   );
 }
 
+const DATA_PINS = {
+  input: (f) => `데이터: ${f.image}`,
+  text: (f) => `데이터: ${fieldPath(f, "question")}`,
+  textout: (f) => `정답: ${fieldPath(f, "answer")}`,
+};
+
 function BlockNode({ id, data }) {
   const a = useAnalysis();
   const selected = useApp((s) => s.selectedId === id);
@@ -208,6 +219,9 @@ function BlockNode({ id, data }) {
   // React Flow can paint a block one frame before the analysis knows about it.
   const info = a.nodeInfo[id] || { detached: true };
   const level = info.issue?.level;
+  const fields = useApp((s) => s.dataset.fields);
+  // Where the VLM's dataset columns enter the model.
+  const pin = a.kind === "vlm" && fields && DATA_PINS[data.type]?.(fields);
   // Problems that belong to this block but have no incoming line to sit on.
   const extra = a.issues.filter((i) => i.nodeId === id && i !== info.issue);
   const cls = [
@@ -221,6 +235,7 @@ function BlockNode({ id, data }) {
 
   return (
     <div className={cls.filter(Boolean).join(" ")}>
+      {pin && <span className="data-pin">{pin}</span>}
       {!def.source && <Handle type="target" position={Position.Left} />}
       <div className="block-head">
         <span className="block-name">{def.name}</span>
@@ -250,7 +265,14 @@ function BlockNode({ id, data }) {
 function ShapeEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, selected }) {
   const a = useAnalysis();
   const info = a.edgeInfo[id];
-  const [path, lx, ly] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition });
+  // A skip connection arcs over the blocks it jumps past, which sit in the same row.
+  const [path, lx, ly] = info?.skip
+    ? [
+        `M ${sourceX} ${sourceY} C ${sourceX + 80} ${sourceY - 170}, ${targetX - 80} ${targetY - 170}, ${targetX} ${targetY}`,
+        (sourceX + targetX) / 2,
+        (sourceY + targetY) / 2 - 128,
+      ]
+    : getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition });
   const level = info?.issue && !info.blocked ? info.issue.level : null;
   const state = !info ? "idle" : (level ?? (info.blocked ? "blocked" : "ok"));
 
@@ -282,7 +304,7 @@ function Inspector() {
   if (!selectedId || !node) {
     const loose = a.issues.filter((i) => !i.nodeId);
     return (
-      <aside className="inspector" aria-label="블록 설명">
+      <>
         <h2 className="insp-h">모델 한눈에</h2>
         <table className="table small">
           <tbody>
@@ -310,7 +332,7 @@ function Inspector() {
           <li>블록 오른쪽 점에서 다음 블록 왼쪽 점으로 끌면 연결돼요.</li>
           <li>블록을 고르고 Delete 키를 누르면 지워지고, 앞뒤 블록이 다시 이어져요.</li>
         </ul>
-      </aside>
+      </>
     );
   }
 
@@ -320,7 +342,7 @@ function Inspector() {
   const torch = info.inShape && info.outShape ? torchLines(node.data.type, p, info.inShape, info.outShape) : [];
 
   return (
-    <aside className="inspector" aria-label="블록 설정">
+    <>
       <h2 className="insp-h">
         {def.name} <span className="muted insp-ko">{def.ko}</span>
       </h2>
@@ -375,6 +397,6 @@ function Inspector() {
           이 블록 지우기
         </button>
       )}
-    </aside>
+    </>
   );
 }

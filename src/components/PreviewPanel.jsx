@@ -8,30 +8,21 @@ import { fmtShape } from "../model/layers.js";
 
 export default function PreviewPanel() {
   const trained = useApp((s) => s.trained);
-  const setView = useApp((s) => s.setView);
   const a = useAnalysis();
 
   return (
-    <section className="lane" aria-labelledby="prev-h">
-      <div className="card step" data-port="preview">
-        <div className="step-head">
-          <h2 id="prev-h" className="step-h">
-            미리보기
-          </h2>
-          <button className="btn outline small" onClick={() => setView("code")} title="Colab 노트북이나 PyTorch, Keras 코드로 가져가기">
-            Colab 코드
-          </button>
-        </div>
-        {trained ? (
-          <Tester trained={trained} stale={trained.signature !== a.signature} />
-        ) : (
-          <p className="muted step-empty">
-            왼쪽에서 모델을 학습시키면 여기서 웹캠이나 사진으로 바로 시험하고, 블록마다 사진을 어떻게 보는지 들여다볼 수 있어요. 코드는 학습 전에도 내보낼 수
-            있어요.
-          </p>
-        )}
-      </div>
-    </section>
+    <>
+      <h2 className="panel-h">시험</h2>
+      {a.kind === "vlm" ? (
+        <p className="callout small">VLM은 브라우저에서 돌릴 수 없어요. Colab 노트북의 질문 칸에서 내 사진에 질문해 볼 수 있어요.</p>
+      ) : trained ? (
+        <Tester trained={trained} stale={trained.signature !== a.signature} />
+      ) : (
+        <p className="small muted">
+          모델을 학습시키면 여기서 웹캠이나 사진으로 바로 시험하고, 블록마다 사진을 어떻게 보는지 들여다볼 수 있어요. 코드는 학습 전에도 내보낼 수 있어요.
+        </p>
+      )}
+    </>
   );
 }
 
