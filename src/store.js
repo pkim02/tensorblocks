@@ -29,6 +29,14 @@ export const useApp = create((set, get) => ({
   templateId: startTemplate.id,
   ...buildTemplate(startTemplate),
   selectedId: null,
+  // A palette block being read about before it goes on the canvas.
+  preview: null,
+  // While a palette block is dragged over the canvas: the line it would drop onto and whether it fits there.
+  dropHint: null,
+  setDropHint: (dropHint) => {
+    const cur = get().dropHint;
+    if (cur?.edgeId !== dropHint?.edgeId || cur?.state !== dropHint?.state) set({ dropHint });
+  },
 
   onNodesChange: (changes) => set((s) => ({ nodes: applyNodeChanges(changes, s.nodes) })),
   onEdgesChange: (changes) => set((s) => ({ edges: applyEdgeChanges(changes, s.edges) })),
@@ -48,33 +56,28 @@ export const useApp = create((set, get) => ({
       return { templateId: null, edges: [...edges, makeEdge(source, target)] };
     });
   },
-  select: (selectedId) => set((s) => ({ selectedId, panel: selectedId ? "block" : s.panel })),
+  select: (selectedId) => set((s) => ({ selectedId, preview: null, panel: selectedId ? "block" : s.panel })),
+  // Picking a block in the palette only explains it; "블록 추가하기" puts it on the canvas.
+  previewBlock: (type) => set({ preview: type, selectedId: null, panel: "block" }),
 
   loadTemplate: (id) => {
     const t = TEMPLATES.find((x) => x.id === id);
-    set({ templateId: id, selectedId: null, ...buildTemplate(t) });
+    set({ templateId: id, selectedId: null, preview: null, ...buildTemplate(t) });
   },
 
-  // Adds a block. Dropped on a spot → placed there; clicked in the palette → slotted
-  // in just before the output so the model stays connected.
-  addBlock: (type, position) => {
+  // Adds a block that isn't wired to anything: the learner draws its lines. Dropped on a
+  // line (snap), it slots in between instead. Returns the new block's id.
+  addBlock: (type, position, snap = true) => {
     const s = get();
-    if (position) {
+    const edge = snap && position && nearestEdge(s, position);
+    if (edge) {
       const node = makeNode(type, position);
-      const edge = nearestEdge(s, position);
-      if (edge) return get().insertOnEdge(edge.id, type, node);
-      set({ nodes: [...s.nodes, node], selectedId: node.id, templateId: null });
-      return;
+      get().insertOnEdge(edge.id, type, node);
+      return node.id;
     }
-    const a = analyze(s.nodes, s.edges, s.classes.length);
-    const last = s.nodes.find((n) => n.id === a.chain[a.chain.length - 1]);
-    if (!LAYERS[type].terminal && last && LAYERS[last.data.type].terminal && a.chain.length > 1) {
-      const into = s.edges.find((e) => e.target === last.id);
-      if (into) return get().insertOnEdge(into.id, type);
-    }
-    if (last) return get().appendAfter(last.id, type);
-    const node = makeNode(type, { x: 0, y: 0 });
-    set({ nodes: [...s.nodes, node], selectedId: node.id });
+    const node = makeNode(type, freeSpot(s.nodes, position ?? { x: 0, y: 0 }));
+    set({ nodes: [...s.nodes, node], selectedId: node.id, preview: null, panel: "block", templateId: null });
+    return node.id;
   },
 
   insertOnEdge: (edgeId, type, preset) => {
@@ -86,6 +89,8 @@ export const useApp = create((set, get) => ({
       nodes: [...s.nodes, node],
       edges: [...s.edges.filter((e) => e.id !== edgeId), makeEdge(edge.source, node.id), makeEdge(node.id, edge.target)],
       selectedId: node.id,
+      preview: null,
+      panel: "block",
       templateId: null,
     });
     get().tidy();
@@ -102,6 +107,8 @@ export const useApp = create((set, get) => ({
       nodes: [...s.nodes, node],
       edges: [...s.edges.filter((e) => !moved.includes(e)), makeEdge(nodeId, node.id), ...moved.map((e) => makeEdge(node.id, e.target))],
       selectedId: node.id,
+      preview: null,
+      panel: "block",
       templateId: null,
     });
     get().tidy();
@@ -229,7 +236,15 @@ function mainInto(s, nodeId) {
   return into.find((e) => i > 0 && e.source === a.chain[i - 1]) || into[0];
 }
 
-function nearestEdge(s, pos) {
+// Nudges a new block down until it doesn't sit on top of another one.
+function freeSpot(nodes, pos) {
+  const p = { ...pos };
+  const hit = (q) => nodes.some((n) => Math.abs(n.position.x - q.x) < NODE_W + 16 && Math.abs(n.position.y - q.y) < (n.measured?.height ?? 90) + 24);
+  for (let i = 0; i < 20 && hit(p); i++) p.y += 120;
+  return p;
+}
+
+export function nearestEdge(s, pos) {
   const byId = new Map(s.nodes.map((n) => [n.id, n]));
   const p = { x: pos.x + NODE_W / 2, y: pos.y + 45 };
   let best = null;

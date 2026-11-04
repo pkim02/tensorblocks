@@ -33,6 +33,8 @@ export function createProjectController({ app, auth, repository, dispose, stopTr
       classes: [1, 2].map((i) => ({ id: newId("c"), name: `Class ${i}`, samples: [] })),
       settings: { epochs: 20, batchSize: 16, learningRate: 0.001 },
       selectedId: null,
+      preview: null,
+      dropHint: null,
       camClassId: null,
       trained: null,
       demoData: false,
@@ -90,6 +92,8 @@ export function createProjectController({ app, auth, repository, dispose, stopTr
     app.setState({
       ...content,
       selectedId: null,
+      preview: null,
+      dropHint: null,
       camClassId: null,
       trained: null,
       demoData: false,
