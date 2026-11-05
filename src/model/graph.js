@@ -37,16 +37,20 @@ export function buildChain(spec, origin = { x: 0, y: 0 }) {
   return { nodes, edges };
 }
 
-// Template with an optional side branch: { spec, side: { into, spec, from } }.
+// Template with optional side branches: { spec, side: { into, spec, from } } or sides: [...].
 // `from` forks the branch off that main-line block; an empty spec is a bare skip connection.
 export function buildTemplate(t) {
   const main = buildChain(t.spec);
-  if (!t.side) return main;
-  const n = t.side.spec.length;
-  const side = t.side.spec.map(([type, params], k) => makeNode(type, sidePosition({ x: 0, y: 0 }, t.side.into, n, k), params));
-  const path = [...(t.side.from === undefined ? [] : [main.nodes[t.side.from]]), ...side, main.nodes[t.side.into]];
-  const edges = [...main.edges, ...path.slice(1).map((nd, k) => makeEdge(path[k].id, nd.id))];
-  return { nodes: [...main.nodes, ...side], edges };
+  const nodes = [...main.nodes];
+  const edges = [...main.edges];
+  for (const b of t.sides ?? (t.side ? [t.side] : [])) {
+    const n = b.spec.length;
+    const side = b.spec.map(([type, params], k) => makeNode(type, sidePosition({ x: 0, y: 0 }, b.into, n, k), params));
+    const path = [...(b.from === undefined ? [] : [main.nodes[b.from]]), ...side, main.nodes[b.into]];
+    nodes.push(...side);
+    edges.push(...path.slice(1).map((nd, k) => makeEdge(path[k].id, nd.id)));
+  }
+  return { nodes, edges };
 }
 
 export const TEMPLATES = [
@@ -95,6 +99,64 @@ export const TEMPLATES = [
     side: { into: 3, from: 1, spec: [] },
   },
   {
+    id: "vit",
+    name: "나만의 작은 ViT",
+    intro: "사진을 조각 토큰으로 읽는 Vision Transformer예요",
+    steps: [
+      ["Patch Embedding", "사진을 8×8 조각 64개로 잘라 토큰으로 바꿔요"],
+      ["Position Embedding", "토큰마다 자리 번호를 더해요"],
+      ["Self-Attention", "토큰끼리 서로 살펴봐요"],
+      ["Dense ×2", "토큰마다 따로 판단해요"],
+      ["시퀀스 요약", "토큰 64개를 벡터 하나로 요약해요"],
+    ],
+    text: "구글 ViT를 아주 작게 줄인 모델이에요. [LayerNorm → Self-Attention → 더하기]와 [LayerNorm → Dense 두 개 → 더하기]가 한 층이고, 그걸 두 번 쌓았어요. Transformer는 처음에 천천히 배워요. 학습률을 0.0003으로 낮추고 에폭을 60쯤으로 늘려 보세요.",
+    spec: [
+      ["input", { size: 64 }],
+      ["patchembed", { patch: 8, dim: 64 }],
+      ["posembed"],
+      ["layernorm"],
+      ["attention", { heads: 4 }],
+      ["add"],
+      ["layernorm"],
+      ["dense", { units: 128, activation: "gelu" }],
+      ["dense", { units: 64, activation: "linear" }],
+      ["add"],
+      ["layernorm"],
+      ["attention", { heads: 4 }],
+      ["add"],
+      ["layernorm"],
+      ["dense", { units: 128, activation: "gelu" }],
+      ["dense", { units: 64, activation: "linear" }],
+      ["add"],
+      ["layernorm"],
+      ["seqpool", { mode: "mean" }],
+      ["output"],
+    ],
+    sides: [
+      { into: 5, from: 2, spec: [] },
+      { into: 9, from: 5, spec: [] },
+      { into: 12, from: 9, spec: [] },
+      { into: 16, from: 12, spec: [] },
+    ],
+  },
+  {
+    id: "convnext",
+    name: "ConvNeXt 블록",
+    text: "메타(Facebook)가 Transformer의 장점을 CNN에 옮겨 만든 ConvNeXt의 한 블록이에요. 큰 7×7 창으로 채널마다 훑고, LayerNorm과 GELU를 쓰고, 채널을 4배로 넓혔다가 되돌린 뒤 skip connection으로 더해요.",
+    spec: [
+      ["input", { size: 64 }],
+      ["conv2d", { filters: 32, kernel: 3, stride: 2 }],
+      ["depthwise", { kernel: 7, activation: "linear" }],
+      ["layernorm"],
+      ["conv2d", { filters: 128, kernel: 1, activation: "gelu" }],
+      ["conv2d", { filters: 32, kernel: 1, activation: "linear" }],
+      ["add"],
+      ["gap"],
+      ["output"],
+    ],
+    side: { into: 6, from: 1, spec: [] },
+  },
+  {
     id: "broken",
     name: "실수 체험: Flatten 빠뜨리기",
     text: "입문자가 가장 많이 겪는 차원 에러를 일부러 만들어 둔 모델이에요. 빨간 선을 고쳐 보세요.",
@@ -106,6 +168,23 @@ export const TEMPLATES = [
     text: "이미지 토큰(1,152칸)과 글 토큰(2,304칸)의 길이가 달라서 이어 붙일 수 없어요. 빨간 선을 고쳐 보세요.",
     spec: [["input", { size: 224 }], ["siglip"], ["concat"], ["gemma"], ["textout"]],
     side: { into: 2, spec: [["text"], ["embedding"]] },
+  },
+  {
+    id: "heads-broken",
+    name: "실수 체험: 헤드 수가 칸 수로 안 나눠짐",
+    text: "토큰 하나는 60칸인데 Self-Attention의 헤드는 8개예요. 60칸을 8묶음으로 똑같이 나눌 수 없어서 PyTorch에서 바로 에러가 나요. 빨간 선을 고쳐 보세요.",
+    spec: [
+      ["input", { size: 64 }],
+      ["patchembed", { patch: 8, dim: 60 }],
+      ["posembed"],
+      ["layernorm"],
+      ["attention", { heads: 8 }],
+      ["add"],
+      ["layernorm"],
+      ["seqpool", { mode: "mean" }],
+      ["output"],
+    ],
+    side: { into: 5, from: 2, spec: [] },
   },
   {
     id: "blank",
@@ -242,6 +321,9 @@ function analyzeUncached(nodes, edges, numClasses) {
     return info;
   };
 
+  const firstPos = r.chain.find((id) => byId.get(id).data.type === "posembed");
+  const clsWanted = r.order.some((id) => byId.get(id).data.type === "seqpool" && byId.get(id).data.params.mode === "cls");
+
   let branch = [];
   for (const id of r.order) {
     const node = byId.get(id);
@@ -275,6 +357,9 @@ function analyzeUncached(nodes, edges, numClasses) {
           }
         : null;
     const ctx = { numClasses, afterInput: at > 0 && byId.get(r.chain[at - 1]).data.type === "input" };
+    // CLS token: a 시퀀스 요약 set to CLS makes the first Position Embedding put one in front.
+    if (node.data.type === "posembed") ctx.cls = clsWanted && id === firstPos;
+    if (node.data.type === "seqpool") ctx.clsReady = firstPos !== undefined && (at < 0 || r.chain.indexOf(firstPos) < at);
     if (def.merge && sources.length > 1) ctx.side = { shape: shapes[1], shapes: shapes.slice(1) };
     const info = visit(node, shapes[0] ?? null, blocked, ctx, tooMany);
     info.inShapes = shapes;

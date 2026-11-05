@@ -148,9 +148,15 @@ function Inside({ trained, result }) {
         {rows.map((r) => (
           <li key={r.nodeId}>
             <span className="inside-name">{trained.blockNames[r.nodeId]}</span>
-            <span className="inside-shape">{r.kind === "maps" ? fmtShape([r.h, r.w, r.c]) : fmtShape([r.n])}</span>
+            <span className="inside-shape">{r.kind === "maps" ? fmtShape([r.h, r.w, r.c]) : r.kind === "tokens" ? fmtShape([r.t, r.d]) : fmtShape([r.n])}</span>
             <div className="maps">
-              {r.kind === "maps" ? r.maps.map((m, i) => <MapTile key={i} data={m} w={r.w} h={r.h} />) : <VecStrip values={r.values} />}
+              {r.kind === "maps" ? (
+                r.maps.map((m, i) => <MapTile key={i} data={m} w={r.w} h={r.h} />)
+              ) : r.kind === "tokens" ? (
+                <MapTile data={r.map} w={r.d} h={r.t} />
+              ) : (
+                <VecStrip values={r.values} />
+              )}
             </div>
           </li>
         ))}

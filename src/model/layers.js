@@ -19,14 +19,24 @@ const is1D = (s) => s && s.length === 1;
 const is2D = (s) => s && s.length === 2;
 const describeShape = (s) => (is2D(s) ? `토큰 줄(${fmtShape(s)})` : is1D(s) ? `한 줄로 펴진 벡터(${fmtShape(s)})` : `이미지 모양(${fmtShape(s)})`);
 
+// The three shapes a block can pass on: an image [H, W, C], a vector [N], a token sequence [T, D].
+export const isImage = is3D;
+export const isVector = is1D;
+export const isSeq = is2D;
+
+// Shape in words, for tips and notes: "토큰 196개 × 768칸".
+const num = (n) => n.toLocaleString("en-US");
+export const fmtShapeLong = (s) => (!s ? "?" : is2D(s) ? `토큰 ${num(s[0])}개 × ${num(s[1])}칸` : is1D(s) ? `${num(s[0])}칸` : fmtShape(s));
+
 const ACTIVATIONS = [
   { value: "relu", label: "ReLU" },
+  { value: "gelu", label: "GELU" },
   { value: "sigmoid", label: "Sigmoid" },
   { value: "tanh", label: "Tanh" },
   { value: "linear", label: "없음" },
 ];
 
-const torchAct = { relu: "nn.ReLU()", sigmoid: "nn.Sigmoid()", tanh: "nn.Tanh()" };
+const torchAct = { relu: "nn.ReLU()", gelu: "nn.GELU()", sigmoid: "nn.Sigmoid()", tanh: "nn.Tanh()" };
 
 // Shared errors -----------------------------------------------------------
 
@@ -39,7 +49,35 @@ function needsImage(name, inShape) {
   };
 }
 
+// A token sequence becomes one vector by averaging its tokens (or taking the CLS token).
+const summaryFix = (inShape) => ({
+  label: `시퀀스 요약 넣기 → ${fmtShape([inShape[1]])}`,
+  note: "토큰들을 평균 내서 하나로",
+  action: { kind: "insertBefore", type: "seqpool" },
+});
+
+// Image-summary blocks given tokens: the token version of the same job is 시퀀스 요약.
+function needsImageNotTokens(name, inShape) {
+  const e = needsImage(name, inShape);
+  if (!is2D(inShape)) return e;
+  const swap = {
+    label: `시퀀스 요약으로 바꾸기 → ${fmtShape([inShape[1]])}`,
+    note: "토큰 줄에서 같은 일을 해요",
+    action: { kind: "replace", type: "seqpool" },
+  };
+  return { ...e, fixes: [swap, ...e.fixes] };
+}
+
 function needsVector(name, inShape) {
+  if (is2D(inShape)) {
+    return {
+      level: "error",
+      title: "여기 모양이 안 맞아요",
+      text: `${josa(name, "은는")} 한 줄짜리 벡터만 받아요. 지금은 토큰 줄(${fmtShapeLong(inShape)})이 들어와요.`,
+      code: "RuntimeError: mat1 and mat2 shapes cannot be multiplied",
+      fixes: [summaryFix(inShape), { label: "이 블록 지우기", action: { kind: "remove" } }],
+    };
+  }
   if (!is3D(inShape)) {
     return {
       level: "error",
@@ -83,6 +121,30 @@ function needsTokens(name, inShape) {
     title: "토큰 줄이 아니에요",
     text: `${josa(name, "은는")} 토큰 개수×칸 수 모양의 토큰 줄을 받아요. 지금은 ${josa(describeShape(inShape), "이가")} 들어와요.`,
     fixes: [...fixes, { label: "이 블록 지우기", action: { kind: "remove" } }],
+  };
+}
+
+// The patch size that cuts an H×W image evenly, smallest token count first that stays under 256.
+const PATCHES = [4, 8, 16];
+const fittingPatch = ([h, w]) =>
+  [8, 16, 4].find((k) => h % k === 0 && w % k === 0 && (h / k) * (w / k) <= 256) ?? PATCHES.find((k) => h % k === 0 && w % k === 0);
+
+// Transformer blocks read a token sequence. An image is cut into patch tokens first (ViT).
+function needsSeq(name, inShape) {
+  const e = needsTokens(name, inShape);
+  const k = is3D(inShape) && fittingPatch(inShape);
+  if (!k) return { ...e, fixes: e.fixes.filter((f) => f.action.kind === "remove") };
+  const dim = 64;
+  return {
+    ...e,
+    fixes: [
+      {
+        label: `Patch Embedding 넣기 → ${fmtShape([(inShape[0] / k) * (inShape[1] / k), dim])}`,
+        note: `사진을 ${k}×${k} 조각 토큰으로`,
+        action: { kind: "insertBefore", type: "patchembed", params: { patch: k, dim } },
+      },
+      { label: "이 블록 지우기", action: { kind: "remove" } },
+    ],
   };
 }
 
@@ -209,6 +271,13 @@ function addFix(main, side, sideIndex) {
     return {
       label: `갈래에 Dense 넣기 → ${fmtShape(main)}`,
       action: { kind: "insertBefore", side: true, sideIndex, type: "dense", params: { units: main[0], activation: "linear" } },
+    };
+  }
+  if (is2D(main) && is2D(side) && main[0] === side[0]) {
+    return {
+      label: `갈래에 Dense 넣기 → ${fmtShape(main)}`,
+      note: "토큰 칸 수만 맞춰요",
+      action: { kind: "insertBefore", side: true, sideIndex, type: "dense", params: { units: main[1], activation: "linear" } },
     };
   }
   return null;
@@ -402,7 +471,7 @@ export const LAYERS = {
     about: "특징 지도 하나를 평균 내서 숫자 하나로 만들어요. 7×7×1280이면 1,280칸짜리 벡터가 돼요. 학습할 값이 없어서 가벼워요.",
     summary: () => "채널마다 평균 1개",
     infer: (inShape) => {
-      if (!is3D(inShape)) return { error: needsImage("GlobalAvgPool", inShape) };
+      if (!is3D(inShape)) return { error: needsImageNotTokens("GlobalAvgPool", inShape) };
       return { out: [inShape[2]] };
     },
     params: () => 0,
@@ -416,7 +485,7 @@ export const LAYERS = {
     fields: [],
     about: "특징 지도마다 가장 큰 값 하나만 남겨요. 그 특징이 사진 어딘가에 '있는지 없는지'를 보는 방식이에요.",
     summary: () => "채널마다 최댓값 1개",
-    infer: (inShape) => (is3D(inShape) ? { out: [inShape[2]] } : { error: needsImage("GlobalMaxPool", inShape) }),
+    infer: (inShape) => (is3D(inShape) ? { out: [inShape[2]] } : { error: needsImageNotTokens("GlobalMaxPool", inShape) }),
     params: () => 0,
   },
 
@@ -460,10 +529,12 @@ export const LAYERS = {
     about: "뉴런마다 들어온 숫자 전부에 가중치를 곱해 더해서 숫자 하나를 내요. 뉴런 수만큼 숫자가 나와요. PyTorch에서는 nn.Linear예요. 한 줄짜리 벡터만 받아요.",
     summary: (p) => `뉴런 ${p.units}개`,
     infer: (inShape, p) => {
+      // A token sequence goes through token by token: only the last axis changes (nn.Linear does the same).
+      if (is2D(inShape)) return { out: [inShape[0], +p.units] };
       if (!is1D(inShape)) return { error: needsVector("Dense", inShape) };
       return { out: [+p.units] };
     },
-    params: (inShape, p) => inShape[0] * p.units + +p.units,
+    params: (inShape, p) => inShape[inShape.length - 1] * p.units + +p.units,
   },
 
   dropout: {
@@ -493,7 +564,17 @@ export const LAYERS = {
     fields: [],
     about: "값들의 크기를 고르게 맞춰서 학습이 흔들리지 않게 해요. 이미지 뒤에도, 벡터 뒤에도 쓸 수 있어요.",
     summary: () => "평균 0, 분산 1로",
-    infer: (inShape) => ({ out: inShape }),
+    infer: (inShape) => {
+      if (!is2D(inShape)) return { out: inShape };
+      return {
+        error: {
+          level: "error",
+          title: "토큰 줄에는 LayerNorm을 써요",
+          text: `BatchNorm은 여러 사진을 묶어서 칸마다 평균을 내요. 토큰 줄(${fmtShapeLong(inShape)})은 토큰마다 따로 고르게 맞추는 LayerNorm을 써요. Transformer도 그렇게 해요.`,
+          fixes: [{ label: "LayerNorm으로 바꾸기", action: { kind: "replace", type: "layernorm" } }],
+        },
+      };
+    },
     params: (inShape) => 2 * inShape[inShape.length - 1],
   },
 
@@ -680,7 +761,6 @@ export const LAYERS = {
     group: "image",
     merge: true,
     maxInputs: Infinity,
-    exportOnly: true, // train.js still builds a one-line Sequential model
     defaults: {},
     fields: [],
     about:
@@ -712,6 +792,304 @@ export const LAYERS = {
       };
     },
     params: () => 0,
+  },
+
+  // ── Transformer (ViT, small LLM blocks) ──────────────────────────
+  patchembed: {
+    name: "Patch Embedding",
+    ko: "조각 토큰 만들기",
+    group: "image",
+    defaults: { patch: 8, dim: 64 },
+    fields: [
+      {
+        key: "patch",
+        label: "조각 크기",
+        type: "select",
+        options: PATCHES.map((v) => ({ value: v, label: `${v}×${v}` })),
+        hint: "사진을 이 크기의 네모 조각으로 잘라요. 작을수록 토큰이 많아져요.",
+      },
+      { key: "dim", label: "토큰 칸 수", type: "number", min: 32, max: 768, hint: "조각 하나를 몇 칸짜리 토큰으로 바꿀지예요. ViT-B는 768칸이에요." },
+    ],
+    about:
+      "사진을 같은 크기의 네모 조각으로 자르고, 조각마다 숫자 줄(토큰) 하나로 바꿔요. 64×64 사진을 8×8 조각으로 자르면 토큰 64개가 생겨요. Vision Transformer(ViT)가 사진을 문장처럼 읽는 첫걸음이에요. 안에서는 창 크기와 보폭이 조각 크기와 같은 Conv2D를 써요.",
+    summary: (p) => `${p.patch}×${p.patch} 조각 → ${p.dim}칸 토큰`,
+    infer: (inShape, p) => {
+      if (!is3D(inShape)) return { error: needsImage("Patch Embedding", inShape) };
+      const [h, w] = inShape;
+      const k = +p.patch;
+      if (h % k || w % k) {
+        const ok = PATCHES.filter((v) => h % v === 0 && w % v === 0);
+        return {
+          error: {
+            level: "error",
+            title: "조각이 딱 나뉘지 않아요",
+            text: `${h}×${w} 사진은 ${k}×${k} 조각으로 남김없이 자를 수 없어요. 세로와 가로가 모두 조각 크기로 나눠떨어져야 해요.`,
+            fixes: [
+              ...ok.map((v) => ({
+                label: `조각 크기를 ${v}×${v}로`,
+                note: `→ 토큰 ${(h / v) * (w / v)}개`,
+                action: { kind: "setParam", key: "patch", value: v },
+              })),
+              { label: "이 블록 지우기", action: { kind: "remove" } },
+            ],
+          },
+        };
+      }
+      const out = [(h / k) * (w / k), +p.dim];
+      const bigger = PATCHES.find((v) => v > k && h % v === 0 && w % v === 0);
+      if (out[0] > 1024) {
+        return {
+          out,
+          warn: {
+            level: "warn",
+            title: "토큰이 너무 많아요",
+            text: `토큰이 ${num(out[0])}개예요. Self-Attention은 토큰끼리 모두 짝을 지어 보기 때문에, 브라우저에서는 아주 느리거나 멈출 수 있어요.`,
+            fixes: bigger
+              ? [
+                  {
+                    label: `조각 크기를 ${bigger}×${bigger}로`,
+                    note: `→ 토큰 ${(h / bigger) * (w / bigger)}개`,
+                    action: { kind: "setParam", key: "patch", value: bigger },
+                  },
+                ]
+              : [],
+          },
+        };
+      }
+      return { out };
+    },
+    params: (inShape, p) => p.patch * p.patch * inShape[2] * p.dim + +p.dim,
+  },
+
+  posembed: {
+    name: "Position Embedding",
+    ko: "자리 번호 더하기",
+    group: "transformer",
+    defaults: { mode: "learned" },
+    fields: [
+      {
+        key: "mode",
+        label: "방식",
+        type: "select",
+        options: [
+          { value: "learned", label: "학습형 (ViT 방식)" },
+          { value: "sine", label: "사인 고정 (첫 Transformer 방식)" },
+        ],
+        hint: "학습형은 자리마다 더할 숫자를 스스로 배우고, 사인 고정은 정해진 물결 무늬를 더해요.",
+      },
+    ],
+    about:
+      "Self-Attention은 토큰의 순서를 몰라요. 그래서 토큰마다 '몇 번째 자리인지' 알려 주는 숫자를 더해요. 모양은 그대로예요. 뒤쪽 시퀀스 요약에서 CLS 토큰을 고르면, 여기서 맨 앞에 CLS 토큰 1개를 붙여요.",
+    summary: (p) => (p.mode === "sine" ? "사인 물결 더하기" : "자리마다 배운 값 더하기"),
+    // ctx.cls: a 시퀀스 요약 further on takes the CLS token, so this block puts one in front.
+    infer: (inShape, _, ctx) => (is2D(inShape) ? { out: [inShape[0] + (ctx?.cls ? 1 : 0), inShape[1]] } : { error: needsSeq("Position Embedding", inShape) }),
+    params: (inShape, p, ctx) => {
+      const n = inShape[0] + (ctx?.cls ? 1 : 0);
+      return (p.mode === "learned" ? n * inShape[1] : 0) + (ctx?.cls ? inShape[1] : 0);
+    },
+  },
+
+  attention: {
+    name: "Self-Attention",
+    ko: "서로 살펴보기",
+    group: "transformer",
+    defaults: { heads: 4, mask: "none" },
+    fields: [
+      {
+        key: "heads",
+        label: "헤드 수",
+        type: "select",
+        options: [1, 2, 4, 8].map((v) => ({ value: v, label: `${v}개` })),
+        hint: "헤드마다 다른 관계를 살펴봐요. 토큰 칸 수가 헤드 수로 나눠떨어져야 해요.",
+      },
+      {
+        key: "mask",
+        label: "가리개 (mask)",
+        type: "select",
+        options: [
+          { value: "none", label: "없음 (모두 보기)" },
+          { value: "causal", label: "causal (앞쪽만 보기)" },
+        ],
+        hint: "GPT처럼 글을 한 조각씩 만드는 모델은 뒤쪽을 미리 보면 안 돼서 causal을 써요.",
+      },
+    ],
+    about:
+      "토큰마다 다른 모든 토큰을 살펴보고, 관련 있는 토큰의 내용을 더 많이 가져와요. 이걸 어텐션이라고 해요. ViT, GPT, Gemma 모두 이 층이 핵심이에요. 질문(Q)·열쇠(K)·내용(V)·출력(O) 네 가지 Linear를 배워요. 모양은 그대로예요.",
+    summary: (p) => `헤드 ${p.heads}개${p.mask === "causal" ? ", 앞쪽만 보기" : ""}`,
+    infer: (inShape, p) => {
+      if (!is2D(inShape)) return { error: needsSeq("Self-Attention", inShape) };
+      const d = inShape[1];
+      const h = +p.heads;
+      if (d % h) {
+        const ok = [8, 4, 2, 1].filter((v) => v < h && d % v === 0);
+        return {
+          error: {
+            level: "error",
+            title: "헤드 수로 칸이 안 나눠져요",
+            text: `토큰 하나가 ${d}칸인데 헤드가 ${h}개예요. 헤드마다 칸을 똑같이 나눠 가져야 하는데, ${d}칸을 ${h}묶음으로 나누면 ${d % h}칸이 남아요.`,
+            code: "AssertionError: embed_dim must be divisible by num_heads",
+            fixes: ok.slice(0, 2).map((v) => ({ label: `헤드를 ${v}개로`, note: `헤드마다 ${d / v}칸`, action: { kind: "setParam", key: "heads", value: v } })),
+          },
+        };
+      }
+      return { out: inShape };
+    },
+    params: (inShape) => 4 * inShape[1] * inShape[1] + 4 * inShape[1],
+  },
+
+  seqpool: {
+    name: "Sequence Pool",
+    ko: "시퀀스 요약",
+    group: "transformer",
+    defaults: { mode: "mean" },
+    fields: [
+      {
+        key: "mode",
+        label: "방식",
+        type: "select",
+        options: [
+          { value: "mean", label: "평균 풀링" },
+          { value: "cls", label: "CLS 토큰" },
+        ],
+        hint: "CLS 토큰을 고르면 앞쪽 Position Embedding이 맨 앞에 요약 담당 토큰 1개를 붙이고, 여기서 그 토큰만 꺼내요.",
+      },
+    ],
+    about:
+      "토큰 줄을 벡터 하나로 요약해요. 평균 풀링은 모든 토큰을 평균 내고, CLS 토큰 방식은 맨 앞에 붙여 둔 요약 담당 토큰 하나만 꺼내요. 분류 출력 앞에 필요해요. 학습할 값은 없어요.",
+    summary: (p) => (p.mode === "cls" ? "CLS 토큰 꺼내기" : "토큰들의 평균"),
+    infer: (inShape, p, ctx) => {
+      if (is3D(inShape)) {
+        return {
+          error: {
+            ...needsTokens("시퀀스 요약", inShape),
+            fixes: [
+              { label: `GlobalAvgPool로 바꾸기 → ${fmtShape([inShape[2]])}`, note: "이미지에서 같은 일을 해요", action: { kind: "replace", type: "gap" } },
+            ],
+          },
+        };
+      }
+      if (!is2D(inShape)) return { error: needsTokens("시퀀스 요약", inShape) };
+      if (p.mode === "cls" && ctx?.clsReady === false) {
+        return {
+          error: {
+            level: "error",
+            title: "CLS 토큰이 없어요",
+            text: "CLS 토큰은 Position Embedding이 맨 앞에 붙여요. 앞쪽에 Position Embedding이 없어서 꺼낼 토큰이 없어요.",
+            fixes: [{ label: "평균 풀링으로 바꾸기", action: { kind: "setParam", key: "mode", value: "mean" } }],
+          },
+        };
+      }
+      return { out: [inShape[1]] };
+    },
+    params: () => 0,
+  },
+
+  rmsnorm: {
+    name: "RMSNorm",
+    ko: "크기만 고르게",
+    group: "vector",
+    defaults: {},
+    fields: [],
+    about:
+      "LayerNorm을 더 가볍게 만든 층이에요. 평균은 빼지 않고, 값들의 전체 크기(제곱평균)만 1로 맞춰요. Gemma, Llama 같은 최신 언어 모델이 써요. 벡터나 토큰 줄 뒤에 놓아요. 모양은 그대로예요.",
+    summary: () => "제곱평균으로 나누기",
+    infer: (inShape) => {
+      if (!is3D(inShape)) return { out: inShape };
+      return {
+        error: {
+          level: "error",
+          title: "여기 모양이 안 맞아요",
+          text: `RMSNorm은 벡터나 토큰 줄의 마지막 칸들을 고르게 맞춰요. 지금은 ${josa(describeShape(inShape), "이가")} 들어와요. 이미지에는 LayerNorm을 쓰세요.`,
+          fixes: [
+            { label: "LayerNorm으로 바꾸기", note: "이미지의 채널마다 고르게", action: { kind: "replace", type: "layernorm" } },
+            { label: "이 블록 지우기", action: { kind: "remove" } },
+          ],
+        },
+      };
+    },
+    params: (inShape) => inShape[inShape.length - 1],
+  },
+
+  moe: {
+    name: "MoE FFN",
+    ko: "전문가 나눠 맡기",
+    group: "transformer",
+    defaults: { experts: 4, topk: 2, hidden: 128 },
+    fields: [
+      { key: "experts", label: "전문가 수", type: "number", min: 2, max: 8, hint: "작은 판단 층(전문가)을 몇 개 둘지예요." },
+      {
+        key: "topk",
+        label: "고르는 전문가 수 (top-k)",
+        type: "select",
+        options: [1, 2].map((v) => ({ value: v, label: `${v}명` })),
+        hint: "토큰마다 문지기가 가장 잘 맞는 전문가를 이만큼 골라요.",
+      },
+      { key: "hidden", label: "전문가 안쪽 뉴런 수", type: "number", min: 8, max: 2048, hint: "전문가 하나는 Dense 두 개예요. 가운데 층의 뉴런 수예요." },
+    ],
+    about:
+      "판단 층(전문가) 여러 개 중에서, 문지기(게이트)가 토큰마다 잘 맞는 전문가 1~2명을 골라 그 답을 섞어요. Mixtral 같은 큰 언어 모델이 쓰는 방식(Mixture of Experts)이에요. 여기서는 배우기 쉽게 모든 전문가를 다 계산한 뒤 고른 전문가의 답만 섞어요. 그래서 진짜 MoE처럼 계산이 줄지는 않아요. 모양은 그대로예요.",
+    summary: (p) => `전문가 ${p.experts}명 중 ${p.topk}명`,
+    infer: (inShape, p) => {
+      if (is3D(inShape)) return { error: needsSeq("MoE FFN", inShape) };
+      if (+p.topk > +p.experts) {
+        return {
+          error: {
+            level: "error",
+            title: "고를 전문가가 모자라요",
+            text: `전문가는 ${p.experts}명인데 ${p.topk}명을 고르려고 해요.`,
+            fixes: [{ label: "1명만 고르기", action: { kind: "setParam", key: "topk", value: 1 } }],
+          },
+        };
+      }
+      return { out: inShape };
+    },
+    params: (inShape, p) => {
+      const d = inShape[inShape.length - 1];
+      const e = +p.experts;
+      const h = +p.hidden;
+      return d * e + e + e * (d * h + h + h * d + d);
+    },
+  },
+
+  // ── For image-making models later (decoders). Classification only for now: code export only.
+  upsample: {
+    name: "Upsample2D",
+    ko: "크기 키우기",
+    group: "image",
+    exportOnly: true,
+    defaults: { factor: 2 },
+    fields: [
+      { key: "factor", label: "배율", type: "select", options: [2, 4].map((v) => ({ value: v, label: `${v}배` })), hint: "2배면 가로·세로가 두 배가 돼요." },
+    ],
+    about:
+      "칸마다 값을 옆과 아래로 복사해서 이미지를 크게 만들어요. MaxPool의 반대예요. 그림을 만드는 생성 모델(U-Net, 오토인코더)이 써요. 지금은 분류 출력만 있어서 코드 내보내기 전용이에요.",
+    summary: (p) => `가로·세로 ${p.factor}배`,
+    infer: (inShape, p) => (is3D(inShape) ? { out: [inShape[0] * p.factor, inShape[1] * p.factor, inShape[2]] } : { error: needsImage("Upsample2D", inShape) }),
+    params: () => 0,
+  },
+
+  convtranspose: {
+    name: "ConvTranspose2D",
+    ko: "크게 펼치기",
+    group: "image",
+    exportOnly: true,
+    defaults: { filters: 16, kernel: 3, stride: 2, padding: "same", activation: "relu" },
+    fields: [
+      { key: "filters", label: "필터 수", type: "number", min: 1, max: 256, hint: "출력 채널 수예요." },
+      ...KERNEL_FIELDS,
+      { key: "activation", label: "활성화 함수", type: "select", options: ACTIVATIONS },
+    ],
+    about:
+      "Conv2D를 거꾸로 한 층이에요. 보폭이 2면 이미지가 두 배로 커지면서 무늬도 함께 배워요. 생성 모델이 작은 특징 지도에서 큰 그림을 그릴 때 써요. 지금은 분류 출력만 있어서 코드 내보내기 전용이에요.",
+    summary: (p) => `필터 ${p.filters}개, ${p.kernel}×${p.kernel}${p.stride > 1 ? `, ${p.stride}배로` : ""}`,
+    infer: (inShape, p) => {
+      if (!is3D(inShape)) return { error: needsImage("ConvTranspose2D", inShape) };
+      const k = +p.kernel;
+      const s = +p.stride;
+      const size = (n) => (p.padding === "same" ? n * s : (n - 1) * s + k);
+      return { out: [size(inShape[0]), size(inShape[1]), +p.filters] };
+    },
+    params: (inShape, p) => p.kernel * p.kernel * inShape[2] * p.filters + +p.filters,
   },
 
   gemma: {
@@ -782,8 +1160,9 @@ export const LAYERS = {
 export const PALETTE = [
   { title: "비전-언어 모델 (VLM)", items: ["text", "embedding", "siglip", "totokens", "projector", "concat", "gemma", "textout"] },
   { title: "사전학습 모델", items: ["mobilenet", "efficientnet", "vit", "resnet18", "resnet50", "vgg16"] },
-  { title: "이미지 층", items: ["conv2d", "depthwise", "maxpool", "avgpool", "gap", "gmp", "flatten"] },
-  { title: "벡터 층", items: ["dense", "layernorm"] },
+  { title: "이미지 층", items: ["conv2d", "depthwise", "maxpool", "avgpool", "gap", "gmp", "flatten", "patchembed", "upsample", "convtranspose"] },
+  { title: "벡터 층", items: ["dense", "layernorm", "rmsnorm"] },
+  { title: "트랜스포머 층", items: ["posembed", "attention", "moe", "seqpool"] },
   { title: "활성화와 규제", items: ["activation", "dropout", "batchnorm"] },
   { title: "갈래 합치기", items: ["add"] },
   { title: "입력과 출력", items: ["input", "output"] },
@@ -821,7 +1200,33 @@ export function torchLines(type, p, inShape, outShape) {
     case "flatten":
       return ["nn.Flatten(),"];
     case "dense":
-      return [`nn.Linear(${inShape[0]}, ${p.units}),`, ...act(p.activation)];
+      return [`nn.Linear(${inShape[inShape.length - 1]}, ${p.units}),`, ...act(p.activation)];
+    case "patchembed":
+      return [`PatchEmbed(${inShape[2]}, ${p.dim}, patch_size=${p.patch}),`];
+    case "posembed": {
+      const cls = outShape && outShape[0] > inShape[0];
+      return [`PositionEmbedding(${inShape[0]}, ${inShape[1]}, learned=${p.mode === "learned" ? "True" : "False"}${cls ? ", with_cls=True" : ""}),`];
+    }
+    case "attention":
+      return [`SelfAttention(${inShape[1]}, num_heads=${p.heads}${p.mask === "causal" ? ", causal=True" : ""}),`];
+    case "seqpool":
+      return [`TokenPool(${JSON.stringify(p.mode)}),`];
+    case "rmsnorm":
+      return [`nn.RMSNorm(${inShape[inShape.length - 1]}),`];
+    case "moe":
+      return [`MoEFFN(${inShape[inShape.length - 1]}, hidden=${p.hidden}, num_experts=${p.experts}, top_k=${p.topk}),`];
+    case "upsample":
+      return [`nn.Upsample(scale_factor=${p.factor}),`];
+    case "convtranspose": {
+      // padding/output_padding chosen so the size matches Keras: "same" gives H·stride, "valid" (H-1)·stride + kernel.
+      const same = p.padding === "same";
+      const pd = same ? Math.floor((p.kernel - 1) / 2) : 0;
+      const extra = same ? p.stride - 1 - (p.kernel - 1 - 2 * pd) : 0;
+      return [
+        `nn.ConvTranspose2d(${inShape[2]}, ${p.filters}, kernel_size=${p.kernel}, stride=${p.stride}, padding=${pd}, output_padding=${extra}),`,
+        ...act(p.activation),
+      ];
+    }
     case "dropout":
       return [`nn.Dropout(${p.rate}),`];
     case "batchnorm":
@@ -849,9 +1254,25 @@ export function torchLines(type, p, inShape, outShape) {
   }
 }
 
-export function kerasLines(type, p) {
+export function kerasLines(type, p, inShape, outShape) {
   const act = (a) => (a === "linear" ? "" : `, activation="${a}"`);
   switch (type) {
+    case "patchembed":
+      return [`layers.Conv2D(${p.dim}, ${p.patch}, strides=${p.patch}),`, `layers.Reshape((${outShape[0]}, ${p.dim})),`];
+    case "posembed":
+      return [`PositionEmbedding(learned=${p.mode === "learned" ? "True" : "False"}${outShape && outShape[0] > inShape[0] ? ", with_cls=True" : ""}),`];
+    case "attention":
+      return [`SelfAttention(${inShape[1]}, num_heads=${p.heads}${p.mask === "causal" ? ", causal=True" : ""}),`];
+    case "seqpool":
+      return [p.mode === "cls" ? 'TokenPool("cls"),' : "layers.GlobalAveragePooling1D(),"];
+    case "rmsnorm":
+      return ["RMSNorm(),"];
+    case "moe":
+      return [`MoEFFN(${inShape[inShape.length - 1]}, ${p.hidden}, ${p.experts}, ${p.topk}),`];
+    case "upsample":
+      return [`layers.UpSampling2D(${p.factor}),`];
+    case "convtranspose":
+      return [`layers.Conv2DTranspose(${p.filters}, ${p.kernel}, strides=${p.stride}, padding="${p.padding}"${act(p.activation)}),`];
     case "conv2d":
       return [`layers.Conv2D(${p.filters}, ${p.kernel}, strides=${p.stride}, padding="${p.padding}"${act(p.activation)}),`];
     case "depthwise":

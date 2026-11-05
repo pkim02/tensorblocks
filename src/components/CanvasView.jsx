@@ -14,7 +14,7 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import { useApp, useAnalysis, nearestEdge, edgesWithout } from "../store.js";
-import { LAYERS, PALETTE, fmtShape, fmtCount, torchLines, torchShape } from "../model/layers.js";
+import { LAYERS, PALETTE, fmtShape, fmtShapeLong, fmtCount, torchLines, torchShape } from "../model/layers.js";
 import { TEMPLATES, NODE_W, checkConnect, checkInsert } from "../model/graph.js";
 import AuthButton from "./AuthButton.jsx";
 import ProjectControls from "./ProjectControls.jsx";
@@ -27,7 +27,7 @@ import { useHistory, undo, redo, dragStart, dragEnd } from "../history.js";
 
 const CODE_ONLY_TIP = "브라우저에서 돌리기엔 커서 Colab에서 학습해요";
 // What the numbers on a line stand for, shown on hover.
-const shapeTip = (s) => (!s ? undefined : s.length === 3 ? "세로×가로×채널" : s.length === 2 ? "토큰 개수×토큰 하나의 길이" : "한 줄짜리 벡터");
+const shapeTip = (s) => (!s ? undefined : s.length === 3 ? "세로×가로×채널" : s.length === 2 ? `토큰 개수×토큰 하나의 길이: ${fmtShapeLong(s)}` : "한 줄짜리 벡터");
 
 const DRAG_TYPE = "application/x-tensorblock";
 // dataTransfer can't be read during dragover, so the palette notes what is being dragged.
