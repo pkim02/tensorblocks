@@ -366,6 +366,92 @@ body { background: var(--page); color: var(--text); }
 .tag-idle, .tag-blocked { color: var(--text-muted); border-style: dashed; font-weight: 400; }
 .note-edge { position: absolute; pointer-events: all; z-index: 10; }
 
+/* Palette pick shown in the block tab */
+.palette-item[aria-pressed="true"] { border-color: var(--accent-9); background: var(--accent-3); box-shadow: inset 3px 0 0 var(--accent-9); }
+.insp-kicker { margin: 0; }
+
+/* Fit preview while drawing a line or dragging a palette block: green fits, red doesn't */
+.layer-block { position: relative; }
+.layer-block.fit-ok { border-color: var(--success-9); outline: 3px solid var(--success-9); outline-offset: 1px; background: var(--success-3); }
+.layer-block.fit-bad { border-color: var(--danger-9); outline: 3px solid var(--danger-9); outline-offset: 1px; background: var(--danger-3); }
+.layer-block.fit-ok .react-flow__handle { border-color: var(--success-9); }
+.layer-block.fit-bad .react-flow__handle { border-color: var(--danger-9); }
+.fit-tag {
+  position: absolute;
+  padding: 1px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid;
+  border-radius: 999px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.layer-block > .fit-tag { left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%); }
+.fit-tag-ok { color: var(--success-11); background: var(--success-3); border-color: var(--success-9); }
+.fit-tag-bad { color: var(--danger-11); background: var(--danger-3); border-color: var(--danger-9); }
+.fit-tag-unknown { color: var(--text-muted); background: var(--surface); border-color: var(--border-strong); border-style: dashed; font-weight: 400; }
+.edge-fit { z-index: 11; }
+.react-flow__edge-path.edge-drop-ok { stroke: var(--success-9); stroke-width: 5; stroke-dasharray: none; }
+.react-flow__edge-path.edge-drop-bad { stroke: var(--danger-9); stroke-width: 5; stroke-dasharray: none; }
+.conn-line { stroke: var(--text-muted); stroke-width: 2; stroke-dasharray: 5 4; }
+.conn-line-ok { stroke: var(--success-9); stroke-width: 3; stroke-dasharray: none; }
+.conn-line-bad { stroke: var(--danger-9); stroke-width: 3; stroke-dasharray: none; }
+
+/* Cut a line without deleting blocks */
+.edge-cut {
+  position: absolute;
+  z-index: 12;
+  padding: 2px 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--danger-11);
+  background: var(--surface);
+  border: 1px solid var(--danger-9);
+  border-radius: 999px;
+  cursor: pointer;
+  pointer-events: all;
+  white-space: nowrap;
+}
+.edge-cut:hover { background: var(--danger-3); }
+.flow .react-flow__edge { cursor: pointer; }
+
+/* Ready-made model guide over the canvas */
+.template-intro {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  z-index: 6;
+  max-width: min(26rem, calc(100% - 2 * var(--space-3) - 90px)); /* leaves room for undo/redo */
+  padding: var(--space-3) var(--space-4);
+  padding-inline-end: var(--space-6, 2rem);
+  background: var(--surface);
+  border: 1px solid var(--accent-7, var(--border-strong));
+  border-inline-start: 4px solid var(--accent-9);
+  border-radius: var(--radius-surface);
+  box-shadow: 0 2px 10px oklch(0 0 0 / 0.08);
+}
+.template-intro p { margin: var(--space-1) 0 0; }
+.intro-h { margin: 0; font-size: var(--step-0); font-weight: 700; }
+.intro-steps { margin: var(--space-2) 0 0; padding-inline-start: 1.3em; font-size: var(--step--1); display: grid; gap: 2px; }
+.intro-steps li { margin: 0; }
+.intro-steps b { font-weight: 700; margin-inline-end: 4px; }
+.intro-close {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+.intro-close:hover { background: var(--gray-3); color: var(--text); }
+
 @media (max-width: 56rem) {
   .canvas-view { height: auto; min-height: 100dvh; }
   .canvas-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 70dvh auto; }
@@ -517,3 +603,71 @@ body { background: var(--page); color: var(--text); }
   .three-stage { order: -1; border-bottom: 1px solid var(--border); }
   .tour { border-inline-end: 0; overflow: visible; }
 }
+
+/* Glossary words: dotted underline, meaning on hover or focus */
+.term { text-decoration: underline dotted var(--accent-9); text-underline-offset: 3px; text-decoration-thickness: 1.5px; cursor: help; }
+.term:focus-visible { outline: 2px solid var(--accent-9); outline-offset: 1px; border-radius: 2px; }
+.term-tip {
+  position: fixed;
+  z-index: 1000;
+  width: 260px;
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-body);
+  font-size: var(--step--1);
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  box-shadow: 0 4px 14px oklch(0 0 0 / 0.12);
+  pointer-events: none;
+}
+.term-tip b { color: var(--accent-11); margin-inline-end: 4px; }
+.note-code { margin: var(--space-1) 0 0; font-size: 12px; color: var(--text-muted); }
+.note-code code { font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; }
+
+/* Close a correction note on the canvas */
+.note-close {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 26px;
+  height: 26px;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+.note-close:hover { background: var(--gray-3); color: var(--text); }
+.note:has(.note-close) .note-title { padding-inline-end: 24px !important; }
+
+/* Undo / redo in the top bar */
+.undo-redo {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  z-index: 6;
+  display: flex;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  box-shadow: 0 1px 4px oklch(0 0 0 / 0.08);
+  overflow: hidden;
+}
+.undo-redo button {
+  width: 36px;
+  height: 32px;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--text);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.undo-redo button + button { border-inline-start: 1px solid var(--border); }
+.undo-redo button:hover:not(:disabled) { background: var(--gray-3); }
+.undo-redo button:disabled { color: var(--gray-8); cursor: default; }
+.undo-redo button:focus-visible { outline: 2px solid var(--accent-9); outline-offset: -2px; }

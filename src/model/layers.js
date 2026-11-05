@@ -1,3 +1,5 @@
+import { josa } from "./terms.js";
+
 // Block catalog: what each block is, how it changes the tensor shape, what can go wrong,
 // and how it is written in TF.js / PyTorch / Keras.
 // Shapes are channels-last arrays: [H, W, C] for images, [N] for vectors, and [T, D] for a
@@ -32,7 +34,7 @@ function needsImage(name, inShape) {
   return {
     level: "error",
     title: "여기 모양이 안 맞아요",
-    text: `${name}은(는) 세로×가로×채널 모양의 이미지를 받아야 해요. 그런데 ${describeShape(inShape)}가 들어오고 있어요.`,
+    text: `${josa(name, "은는")} 세로×가로×채널 모양의 이미지를 받아야 해요. 그런데 ${josa(describeShape(inShape), "이가")} 들어오고 있어요.`,
     fixes: [{ label: "이 블록 지우기", action: { kind: "remove" } }],
   };
 }
@@ -42,7 +44,7 @@ function needsVector(name, inShape) {
     return {
       level: "error",
       title: "여기 모양이 안 맞아요",
-      text: `${name}은(는) 한 줄짜리 벡터만 받아요. 지금은 ${describeShape(inShape)}가 들어와요.`,
+      text: `${josa(name, "은는")} 한 줄짜리 벡터만 받아요. 지금은 ${josa(describeShape(inShape), "이가")} 들어와요.`,
       fixes: [{ label: "이 블록 지우기", action: { kind: "remove" } }],
     };
   }
@@ -50,7 +52,8 @@ function needsVector(name, inShape) {
   return {
     level: "error",
     title: "여기 모양이 안 맞아요",
-    text: `${name}은(는) 한 줄짜리 벡터만 받아요. 지금은 ${fmtShape(inShape)} 모양(3차원)이 들어와요. PyTorch였다면 "mat1 and mat2 shapes cannot be multiplied" 에러가 났을 거예요.`,
+    text: `${josa(name, "은는")} 한 줄짜리 벡터만 받아요. 지금은 ${fmtShape(inShape)} 모양(3차원)이 들어와요.`,
+    code: "RuntimeError: mat1 and mat2 shapes cannot be multiplied",
     fixes: [
       {
         label: `GlobalAvgPool 넣기 → ${fmtShape([c])}`,
@@ -78,7 +81,7 @@ function needsTokens(name, inShape) {
   return {
     level: "error",
     title: "토큰 줄이 아니에요",
-    text: `${name}은(는) 토큰 개수×칸 수 모양의 토큰 줄을 받아요. 지금은 ${describeShape(inShape)}가 들어와요.`,
+    text: `${josa(name, "은는")} 토큰 개수×칸 수 모양의 토큰 줄을 받아요. 지금은 ${josa(describeShape(inShape), "이가")} 들어와요.`,
     fixes: [...fixes, { label: "이 블록 지우기", action: { kind: "remove" } }],
   };
 }
@@ -97,7 +100,7 @@ function needsTokenIds(inShape) {
   return {
     level: "error",
     title: "글이 아니에요",
-    text: `Embedding은 '글 입력'에서 나온 단어 조각 번호를 받아요. 지금은 ${describeShape(inShape)}가 들어와요.`,
+    text: `Embedding은 '글 입력'에서 나온 단어 조각 번호를 받아요. 지금은 ${josa(describeShape(inShape), "이가")} 들어와요.`,
     fixes: [{ label: "이 블록 지우기", action: { kind: "remove" } }],
   };
 }
@@ -106,7 +109,7 @@ function tooSmall(name, inShape, extraFixes = []) {
   return {
     level: "error",
     title: "이미지가 사라져요",
-    text: `${name}을(를) 지나면 ${fmtShape(inShape)} 이미지의 크기가 0 이하가 돼요. 앞에서 너무 많이 줄였어요.`,
+    text: `${josa(name, "을를")} 지나면 ${fmtShape(inShape)} 이미지의 크기가 0 이하가 돼요. 앞에서 너무 많이 줄였어요.`,
     fixes: [...extraFixes, { label: "이 블록 지우기", action: { kind: "remove" } }],
   };
 }
@@ -116,7 +119,7 @@ function pretrainedRules(name, size, inShape, ctx) {
     return {
       level: "error",
       title: "자리가 틀렸어요",
-      text: `${name}은(는) 원본 사진을 받도록 미리 학습됐어요. '이미지 입력' 바로 다음에 놓아 주세요.`,
+      text: `${josa(name, "은는")} 원본 사진을 받도록 미리 학습됐어요. '이미지 입력' 바로 다음에 놓아 주세요.`,
       fixes: [{ label: "이 블록 지우기", action: { kind: "remove" } }],
     };
   }
@@ -124,7 +127,7 @@ function pretrainedRules(name, size, inShape, ctx) {
     return {
       level: "error",
       title: "사진 크기가 안 맞아요",
-      text: `${name}은(는) ${size}×${size} 사진을 받아요. 지금 입력은 ${fmtShape(inShape)}이에요.`,
+      text: `${josa(name, "은는")} ${size}×${size} 사진을 받아요. 지금 입력은 ${fmtShape(inShape)}이에요.`,
       fixes: [{ label: `입력 크기를 ${size}로 바꾸기`, action: { kind: "setInputSize", value: size } }],
     };
   }
@@ -278,7 +281,7 @@ export const LAYERS = {
     fields: [],
     pretrained: true,
     about:
-      "구글이 이미지 100만 장 이상으로 미리 학습시킨 '눈'이에요. Teachable Machine도 이걸 써요. 사진을 7×7 칸마다 1,280가지 특징으로 바꿔 줘요. 가중치는 고정해서 학습이 빨라요.",
+      "구글이 이미지 100만 장 이상으로 미리 학습시킨 '눈'이에요. Teachable Machine도 이걸 써요. 사진을 7×7 칸마다 1,280가지 특징으로 바꿔 줘요. 이미 배운 가중치는 그대로 두고 뒤쪽 블록만 학습해서, 사진이 적어도 빨리 배워요.",
     summary: () => "ImageNet으로 학습됨, 고정",
     infer: (inShape, _, ctx) => {
       if (!is3D(inShape)) return { error: needsImage("MobileNetV2", inShape) };
@@ -331,7 +334,7 @@ export const LAYERS = {
 
   vit: exportBackbone({
     name: "ViT-B/16",
-    ko: "Hugging Face",
+    ko: "사전학습 모델",
     about:
       "구글이 만든 Vision Transformer예요. 사진을 16×16 조각 196개로 잘라 문장처럼 읽고(Self-Attention), 사진 전체를 768칸 벡터 하나로 요약해요. Hugging Face에서 받아오고, PyTorch 코드로만 내보내요.",
     out: [768],
@@ -454,7 +457,7 @@ export const LAYERS = {
       { key: "units", label: "뉴런 수", type: "number", min: 1, max: 2048, hint: "출력 벡터의 길이" },
       { key: "activation", label: "활성화 함수", type: "select", options: ACTIVATIONS },
     ],
-    about: "들어온 모든 숫자를 모든 뉴런과 연결해서 판단해요. PyTorch에서는 nn.Linear예요. 한 줄짜리 벡터만 받아요.",
+    about: "뉴런마다 들어온 숫자 전부에 가중치를 곱해 더해서 숫자 하나를 내요. 뉴런 수만큼 숫자가 나와요. PyTorch에서는 nn.Linear예요. 한 줄짜리 벡터만 받아요.",
     summary: (p) => `뉴런 ${p.units}개`,
     infer: (inShape, p) => {
       if (!is1D(inShape)) return { error: needsVector("Dense", inShape) };
@@ -501,7 +504,7 @@ export const LAYERS = {
     defaults: {},
     fields: [],
     about:
-      "마지막 칸들의 값을 평균 0, 분산 1로 맞춰요. Transformer(ViT, GPT)와 ConvNeXt에 꼭 들어가는 층이에요. 벡터, 토큰, 이미지 뒤에 모두 쓸 수 있어요. 모양은 그대로예요.",
+      "마지막 칸들의 값을 평균 0, 분산 1로 맞춰요. Transformer(ViT, GPT)에 꼭 들어가는 층이에요. 벡터, 토큰, 이미지 뒤에 모두 쓸 수 있어요. 모양은 그대로예요.",
     summary: () => "마지막 칸마다 정규화",
     infer: (inShape) => ({ out: inShape }),
     params: (inShape) => 2 * inShape[inShape.length - 1],
@@ -513,7 +516,7 @@ export const LAYERS = {
     group: "vector",
     defaults: { fn: "relu" },
     fields: [
-      { key: "fn", label: "함수", type: "select", options: ACTIVATION_FNS, hint: "Conv2D, Dense 안에도 들어 있지만 PyTorch처럼 따로 놓을 수도 있어요." },
+      { key: "fn", label: "함수", type: "select", options: ACTIVATION_FNS, hint: "잘 모르겠으면 ReLU를 쓰세요. Conv2D, Dense 안에도 들어 있지만 PyTorch처럼 따로 놓을 수도 있어요." },
     ],
     about: "숫자를 휘게(비선형) 만들어서, 모델이 직선 하나로는 못 나누는 것도 배우게 해요. 모양은 그대로예요.",
     summary: (p) => ACTIVATION_FNS.find((a) => a.value === p.fn)?.label ?? p.fn,
@@ -654,7 +657,8 @@ export const LAYERS = {
           error: {
             level: "error",
             title: "토큰 길이가 달라서 못 붙여요",
-            text: `이미지 토큰은 ${inShape[1].toLocaleString("en-US")}칸, 글 토큰은 ${side[1].toLocaleString("en-US")}칸이에요. 한 줄로 이으려면 토큰 하나의 길이가 같아야 해요. PyTorch였다면 torch.cat에서 "Sizes of tensors must match" 에러가 났을 거예요.`,
+            text: `이미지 토큰은 ${inShape[1].toLocaleString("en-US")}칸, 글 토큰은 ${side[1].toLocaleString("en-US")}칸이에요. 한 줄로 이으려면 토큰 하나의 길이가 같아야 해요.`,
+            code: "torch.cat → RuntimeError: Sizes of tensors must match",
             fixes: [
               {
                 label: `Projector 넣기 → ${fmtShape([inShape[0], side[1]])}`,
@@ -701,7 +705,8 @@ export const LAYERS = {
         error: {
           level: "error",
           title: "두 갈래의 모양이 달라요",
-          text: `한쪽은 ${fmtShape(inShape)}, 다른 쪽은 ${fmtShape(side)}이에요. 칸마다 더하려면 모양이 똑같아야 해요. PyTorch였다면 "The size of tensor a must match the size of tensor b" 에러가 났을 거예요.`,
+          text: `한쪽은 ${fmtShape(inShape)}, 다른 쪽은 ${fmtShape(side)}이에요. 칸마다 더하려면 모양이 똑같아야 해요.`,
+          code: "RuntimeError: The size of tensor a must match the size of tensor b",
           fixes: fix ? [fix] : [{ label: "이 블록 지우기", action: { kind: "remove" } }],
         },
       };
@@ -719,7 +724,7 @@ export const LAYERS = {
     defaults: {},
     fields: [],
     about:
-      "구글의 언어 모델 Gemma 2 (2B)예요. 이미지 토큰과 글 토큰을 한 줄로 읽고, 토큰마다 앞의 모든 토큰을 살펴봐요(어텐션). 26층짜리 Transformer라서 모양은 그대로예요.",
+      "구글의 언어 모델 Gemma 2 (2B)예요. 이미지 토큰과 글 토큰을 한 줄로 읽고, 토큰마다 앞의 모든 토큰을 살펴봐요(어텐션). 26층짜리 Transformer예요. 층을 지나도 토큰의 모양은 그대로예요.",
     summary: () => "26층 Transformer",
     infer: (inShape) => {
       if (!is2D(inShape)) return { error: needsTokens("Gemma 2", inShape) };

@@ -4,6 +4,7 @@
 // pulls in a side branch that starts at its own source (the text input of a VLM) or forks
 // off an earlier block (a ResNet skip connection).
 import { LAYERS } from "./layers.js";
+import { josa } from "./terms.js";
 
 // Blocks sit in one row, left to right. NODE_W must match .layer-block width in styles.css.
 export const NODE_W = 196;
@@ -59,6 +60,14 @@ export const TEMPLATES = [
   {
     id: "tm",
     name: "Teachable Machine 방식",
+    intro: "이미지 분류 AI의 기본 구조예요",
+    steps: [
+      ["Image Input", "사진을 받아요"],
+      ["MobileNetV2", "사진에서 특징을 뽑아요"],
+      ["GlobalAvgPool", "특징을 한 줄로 요약해요"],
+      ["Dense", "요약을 보고 판단해요"],
+      ["Output", "클래스마다 확률을 내요"],
+    ],
     text: "사전학습된 MobileNet 위에 작은 층만 학습해요. 데이터가 적어도 잘 돼요.",
     spec: [["input", { size: 224 }], ["mobilenet"], ["gap"], ["dense", { units: 100 }], ["output"]],
   },
@@ -261,7 +270,7 @@ function analyzeUncached(nodes, edges, numClasses) {
             title: "입력이 너무 많아요",
             text: def.merge
               ? `${def.name}의 입력은 ${most}개까지예요.`
-              : `${def.name}은(는) 입력을 하나만 받아요. 여러 갈래를 합치려면 사이에 Add 블록을 넣어 주세요.`,
+              : `${josa(def.name, "은는")} 입력을 하나만 받아요. 여러 갈래를 합치려면 사이에 Add 블록을 넣어 주세요.`,
             fixes: [],
           }
         : null;
@@ -289,7 +298,7 @@ function analyzeUncached(nodes, edges, numClasses) {
       if (branch.length) r.side[id] = branch;
       branch = [];
       if (def.terminal && (outs.get(id) || []).length) {
-        r.issues.push({ level: "error", title: "출력 뒤에 블록이 있어요", text: `'${def.ko}'은(는) 맨 끝에 와야 해요.`, nodeId: id, fixes: [] });
+        r.issues.push({ level: "error", title: "출력 뒤에 블록이 있어요", text: `'${def.ko}'${josa(def.ko, "은는").slice(def.ko.length)} 맨 끝에 와야 해요.`, nodeId: id, fixes: [] });
       }
     }
   }
@@ -344,4 +353,120 @@ function markDetached(r, nodes) {
   for (const n of nodes) {
     if (!r.nodeInfo[n.id]) r.nodeInfo[n.id] = { detached: true };
   }
+}
+
+// Fit checks for a line the learner is about to draw ---------------------------------
+// They only ask "do the shapes fit?" so the canvas can paint a spot green or red before
+// the line exists. A wrong line is still allowed: the red note that follows is the lesson.
+
+// What comes out of a block, following lines back even through blocks the main walk
+// skipped (a block just added and only half wired up). null when it can't be known yet.
+export function probeShape(id, nodes, edges, numClasses, a = analyze(nodes, edges, numClasses)) {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const memo = new Map();
+  const go = (nid) => {
+    if (memo.has(nid)) return memo.get(nid);
+    memo.set(nid, null); // a loop knows nothing
+    const node = byId.get(nid);
+    if (!node) return null;
+    const known = a.nodeInfo[nid];
+    if (known && !known.detached) {
+      memo.set(nid, known.outShape ?? null);
+      return known.outShape ?? null;
+    }
+    const def = LAYERS[node.data.type];
+    const ins = edges.filter((e) => e.target === nid).map((e) => e.source);
+    const shapes = ins.map(go);
+    if ((!def.source && !ins.length) || shapes.some((s) => !s)) return null;
+    const ctx = { numClasses: Math.max(numClasses, 2), afterInput: byId.get(ins[0])?.data.type === "input" };
+    if (def.merge && shapes.length > 1) ctx.side = { shape: shapes[1], shapes: shapes.slice(1) };
+    const res = def.infer(shapes[0] ?? null, node.data.params, ctx);
+    const out = res.error ? null : res.out;
+    memo.set(nid, out);
+    return out;
+  };
+  return go(id);
+}
+
+// Runs one block on the shapes that would reach it: "ok", "bad", or "unknown".
+function fits(def, params, shapes, ctx) {
+  if (shapes.some((s) => !s)) return { state: "unknown" };
+  // A merge block with one way in is only waiting for its second line.
+  if (def.merge && shapes.length < 2) return { state: "ok", out: null };
+  if (def.merge) ctx.side = { shape: shapes[1], shapes: shapes.slice(1) };
+  const res = def.infer(shapes[0], params, ctx);
+  return res.error ? { state: "bad", issue: res.error } : { state: "ok", out: res.out };
+}
+
+// The link into a block along the main line (a merge block has a second one from its side branch).
+export function mainLineInto(nodes, edges, numClasses, nodeId) {
+  const into = edges.filter((e) => e.target === nodeId);
+  if (into.length < 2) return into[0];
+  const a = analyze(nodes, edges, numClasses);
+  const i = a.chain.indexOf(nodeId);
+  return into.find((e) => i > 0 && e.source === a.chain[i - 1]) || into[0];
+}
+
+// The lines after drawing source → target. One way in: a new link replaces the old one.
+// A merge block (Concat, Add) keeps up to maxInputs ways in; when it is full, the main line
+// stays and a side one makes room. A block's output can fork, so its other links stay.
+export function connectEdges(nodes, edges, numClasses, source, target) {
+  const def = LAYERS[nodes.find((n) => n.id === target)?.data.type];
+  const merge = def?.merge;
+  let next = edges.filter((e) => e.target !== target || (merge && e.source !== source));
+  if (merge && next.filter((e) => e.target === target).length >= (def.maxInputs ?? 2)) {
+    const keep = mainLineInto(nodes, next, numClasses, target);
+    next = next.filter((e) => e.target !== target || e === keep);
+  }
+  return [...next, makeEdge(source, target)];
+}
+
+// Would a line source → target fit? It draws the line the way onConnect will (connectEdges)
+// and reads the target's inputs, main line first, the way analyze will see them.
+export function checkConnect(sourceId, targetId, nodes, edges, numClasses) {
+  if (sourceId === targetId) return "bad";
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const src = byId.get(sourceId);
+  const tgt = byId.get(targetId);
+  if (!src || !tgt) return "unknown";
+  const sdef = LAYERS[src.data.type];
+  const def = LAYERS[tgt.data.type];
+  if (sdef.terminal || def.source) return "bad";
+  const after = connectEdges(nodes, edges, numClasses, sourceId, targetId);
+  // A line back into a block that already feeds the source makes a loop ("고리가 생겼어요").
+  const upstream = new Set();
+  for (const stack = [sourceId]; stack.length;) {
+    const id = stack.pop();
+    if (id === targetId) return "bad";
+    if (upstream.has(id)) continue;
+    upstream.add(id);
+    for (const e of after) if (e.target === id) stack.push(e.source);
+  }
+  const a = analyze(nodes, after, numClasses);
+  // A block not on the walk yet (half wired) has no order from analyze: take the lines as they are.
+  const info = a.nodeInfo[targetId];
+  const sources = info && !info.detached && a.inputsOf[targetId] ? a.inputsOf[targetId] : after.filter((e) => e.target === targetId).map((e) => e.source);
+  const shapes = sources.map((id) => probeShape(id, nodes, after, numClasses, a));
+  const afterInput = byId.get(sources[0])?.data.type === "input";
+  return fits(def, tgt.data.params, shapes, { numClasses: Math.max(numClasses, 2), afterInput }).state;
+}
+
+// Would dropping a new `type` block onto this line fit on both sides?
+export function checkInsert(edgeId, type, nodes, edges, numClasses, params) {
+  const edge = edges.find((e) => e.id === edgeId);
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const src = edge && byId.get(edge.source);
+  const tgt = edge && byId.get(edge.target);
+  if (!src || !tgt) return "unknown";
+  const def = LAYERS[type];
+  if (def.source || def.terminal) return "bad";
+  const n = Math.max(numClasses, 2);
+  const a = analyze(nodes, edges, numClasses);
+  const shape = probeShape(src.id, nodes, edges, numClasses, a);
+  const first = fits(def, { ...def.defaults, ...params }, [shape], { numClasses: n, afterInput: src.data.type === "input" });
+  if (first.state !== "ok" || !first.out) return first.state === "ok" ? "unknown" : first.state;
+  const tdef = LAYERS[tgt.data.type];
+  const into = edges.filter((e) => e.target === tgt.id);
+  const shapes = into.map((e) => (e.id === edgeId ? first.out : probeShape(e.source, nodes, edges, numClasses, a)));
+  return fits(tdef, tgt.data.params, shapes, { numClasses: n, afterInput: false }).state;
 }

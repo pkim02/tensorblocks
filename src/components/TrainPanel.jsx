@@ -1,6 +1,7 @@
 import { useApp, useAnalysis } from "../store.js";
 import { blockers, startTraining, stopTraining } from "../train/run.js";
 import IssueNote from "./IssueNote.jsx";
+import { Glossed } from "./Term.jsx";
 import AccuracyChart from "./AccuracyChart.jsx";
 
 export default function TrainPanel() {
@@ -60,7 +61,9 @@ export default function TrainPanel() {
               </select>
             </div>
           </div>
-          <p className="small muted">에폭: 전체 사진을 몇 번 반복해서 볼지. 배치: 한 번에 몇 장씩 볼지. 학습률: 한 번에 얼마나 크게 고칠지.</p>
+          <p className="small muted">
+            <Glossed text="에폭: 전체 사진을 몇 번 반복해서 볼지. 배치: 한 번에 몇 장씩 볼지. 학습률: 한 번에 얼마나 크게 고칠지." />
+          </p>
         </>
       )}
 
