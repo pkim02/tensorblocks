@@ -966,6 +966,112 @@ export const LAYERS = {
     params: () => 0,
   },
 
+  rmsnorm: {
+    name: "RMSNorm",
+    ko: "크기만 고르게",
+    group: "vector",
+    defaults: {},
+    fields: [],
+    about:
+      "LayerNorm을 더 가볍게 만든 층이에요. 평균은 빼지 않고, 값들의 전체 크기(제곱평균)만 1로 맞춰요. Gemma, Llama 같은 최신 언어 모델이 써요. 벡터나 토큰 줄 뒤에 놓아요. 모양은 그대로예요.",
+    summary: () => "제곱평균으로 나누기",
+    infer: (inShape) => {
+      if (!is3D(inShape)) return { out: inShape };
+      return {
+        error: {
+          level: "error",
+          title: "여기 모양이 안 맞아요",
+          text: `RMSNorm은 벡터나 토큰 줄의 마지막 칸들을 고르게 맞춰요. 지금은 ${josa(describeShape(inShape), "이가")} 들어와요. 이미지에는 LayerNorm을 쓰세요.`,
+          fixes: [
+            { label: "LayerNorm으로 바꾸기", note: "이미지의 채널마다 고르게", action: { kind: "replace", type: "layernorm" } },
+            { label: "이 블록 지우기", action: { kind: "remove" } },
+          ],
+        },
+      };
+    },
+    params: (inShape) => inShape[inShape.length - 1],
+  },
+
+  moe: {
+    name: "MoE FFN",
+    ko: "전문가 나눠 맡기",
+    group: "transformer",
+    defaults: { experts: 4, topk: 2, hidden: 128 },
+    fields: [
+      { key: "experts", label: "전문가 수", type: "number", min: 2, max: 8, hint: "작은 판단 층(전문가)을 몇 개 둘지예요." },
+      {
+        key: "topk",
+        label: "고르는 전문가 수 (top-k)",
+        type: "select",
+        options: [1, 2].map((v) => ({ value: v, label: `${v}명` })),
+        hint: "토큰마다 문지기가 가장 잘 맞는 전문가를 이만큼 골라요.",
+      },
+      { key: "hidden", label: "전문가 안쪽 뉴런 수", type: "number", min: 8, max: 2048, hint: "전문가 하나는 Dense 두 개예요. 가운데 층의 뉴런 수예요." },
+    ],
+    about:
+      "판단 층(전문가) 여러 개 중에서, 문지기(게이트)가 토큰마다 잘 맞는 전문가 1~2명을 골라 그 답을 섞어요. Mixtral 같은 큰 언어 모델이 쓰는 방식(Mixture of Experts)이에요. 여기서는 배우기 쉽게 모든 전문가를 다 계산한 뒤 고른 전문가의 답만 섞어요. 그래서 진짜 MoE처럼 계산이 줄지는 않아요. 모양은 그대로예요.",
+    summary: (p) => `전문가 ${p.experts}명 중 ${p.topk}명`,
+    infer: (inShape, p) => {
+      if (is3D(inShape)) return { error: needsSeq("MoE FFN", inShape) };
+      if (+p.topk > +p.experts) {
+        return {
+          error: {
+            level: "error",
+            title: "고를 전문가가 모자라요",
+            text: `전문가는 ${p.experts}명인데 ${p.topk}명을 고르려고 해요.`,
+            fixes: [{ label: "1명만 고르기", action: { kind: "setParam", key: "topk", value: 1 } }],
+          },
+        };
+      }
+      return { out: inShape };
+    },
+    params: (inShape, p) => {
+      const d = inShape[inShape.length - 1];
+      const e = +p.experts;
+      const h = +p.hidden;
+      return d * e + e + e * (d * h + h + h * d + d);
+    },
+  },
+
+  // ── For image-making models later (decoders). Classification only for now: code export only.
+  upsample: {
+    name: "Upsample2D",
+    ko: "크기 키우기",
+    group: "image",
+    exportOnly: true,
+    defaults: { factor: 2 },
+    fields: [{ key: "factor", label: "배율", type: "select", options: [2, 4].map((v) => ({ value: v, label: `${v}배` })), hint: "2배면 가로·세로가 두 배가 돼요." }],
+    about:
+      "칸마다 값을 옆과 아래로 복사해서 이미지를 크게 만들어요. MaxPool의 반대예요. 그림을 만드는 생성 모델(U-Net, 오토인코더)이 써요. 지금은 분류 출력만 있어서 코드 내보내기 전용이에요.",
+    summary: (p) => `가로·세로 ${p.factor}배`,
+    infer: (inShape, p) => (is3D(inShape) ? { out: [inShape[0] * p.factor, inShape[1] * p.factor, inShape[2]] } : { error: needsImage("Upsample2D", inShape) }),
+    params: () => 0,
+  },
+
+  convtranspose: {
+    name: "ConvTranspose2D",
+    ko: "크게 펼치기",
+    group: "image",
+    exportOnly: true,
+    defaults: { filters: 16, kernel: 3, stride: 2, padding: "same", activation: "relu" },
+    fields: [
+      { key: "filters", label: "필터 수", type: "number", min: 1, max: 256, hint: "출력 채널 수예요." },
+      ...KERNEL_FIELDS,
+      { key: "activation", label: "활성화 함수", type: "select", options: ACTIVATIONS },
+    ],
+    about:
+      "Conv2D를 거꾸로 한 층이에요. 보폭이 2면 이미지가 두 배로 커지면서 무늬도 함께 배워요. 생성 모델이 작은 특징 지도에서 큰 그림을 그릴 때 써요. 지금은 분류 출력만 있어서 코드 내보내기 전용이에요.",
+    summary: (p) => `필터 ${p.filters}개, ${p.kernel}×${p.kernel}${p.stride > 1 ? `, ${p.stride}배로` : ""}`,
+    infer: (inShape, p) => {
+      if (!is3D(inShape)) return { error: needsImage("ConvTranspose2D", inShape) };
+      const k = +p.kernel;
+      const s = +p.stride;
+      const size = (n) => (p.padding === "same" ? n * s : (n - 1) * s + k);
+      return { out: [size(inShape[0]), size(inShape[1]), +p.filters] };
+    },
+    params: (inShape, p) => p.kernel * p.kernel * inShape[2] * p.filters + +p.filters,
+  },
+
   gemma: {
     name: "Gemma 2",
     ko: "언어 모델",
@@ -1034,9 +1140,9 @@ export const LAYERS = {
 export const PALETTE = [
   { title: "비전-언어 모델 (VLM)", items: ["text", "embedding", "siglip", "totokens", "projector", "concat", "gemma", "textout"] },
   { title: "사전학습 모델", items: ["mobilenet", "efficientnet", "vit", "resnet18", "resnet50", "vgg16"] },
-  { title: "이미지 층", items: ["conv2d", "depthwise", "maxpool", "avgpool", "gap", "gmp", "flatten", "patchembed"] },
-  { title: "벡터 층", items: ["dense", "layernorm"] },
-  { title: "트랜스포머 층", items: ["posembed", "attention", "seqpool"] },
+  { title: "이미지 층", items: ["conv2d", "depthwise", "maxpool", "avgpool", "gap", "gmp", "flatten", "patchembed", "upsample", "convtranspose"] },
+  { title: "벡터 층", items: ["dense", "layernorm", "rmsnorm"] },
+  { title: "트랜스포머 층", items: ["posembed", "attention", "moe", "seqpool"] },
   { title: "활성화와 규제", items: ["activation", "dropout", "batchnorm"] },
   { title: "갈래 합치기", items: ["add"] },
   { title: "입력과 출력", items: ["input", "output"] },
@@ -1085,6 +1191,19 @@ export function torchLines(type, p, inShape, outShape) {
       return [`SelfAttention(${inShape[1]}, num_heads=${p.heads}${p.mask === "causal" ? ", causal=True" : ""}),`];
     case "seqpool":
       return [`TokenPool(${JSON.stringify(p.mode)}),`];
+    case "rmsnorm":
+      return [`nn.RMSNorm(${inShape[inShape.length - 1]}),`];
+    case "moe":
+      return [`MoEFFN(${inShape[inShape.length - 1]}, hidden=${p.hidden}, num_experts=${p.experts}, top_k=${p.topk}),`];
+    case "upsample":
+      return [`nn.Upsample(scale_factor=${p.factor}),`];
+    case "convtranspose": {
+      // padding/output_padding chosen so the size matches Keras: "same" gives H·stride, "valid" (H-1)·stride + kernel.
+      const same = p.padding === "same";
+      const pd = same ? Math.floor((p.kernel - 1) / 2) : 0;
+      const extra = same ? p.stride - 1 - (p.kernel - 1 - 2 * pd) : 0;
+      return [`nn.ConvTranspose2d(${inShape[2]}, ${p.filters}, kernel_size=${p.kernel}, stride=${p.stride}, padding=${pd}, output_padding=${extra}),`, ...act(p.activation)];
+    }
     case "dropout":
       return [`nn.Dropout(${p.rate}),`];
     case "batchnorm":
@@ -1123,6 +1242,14 @@ export function kerasLines(type, p, inShape, outShape) {
       return [`SelfAttention(${inShape[1]}, num_heads=${p.heads}${p.mask === "causal" ? ", causal=True" : ""}),`];
     case "seqpool":
       return [p.mode === "cls" ? 'TokenPool("cls"),' : "layers.GlobalAveragePooling1D(),"];
+    case "rmsnorm":
+      return ["RMSNorm(),"];
+    case "moe":
+      return [`MoEFFN(${inShape[inShape.length - 1]}, ${p.hidden}, ${p.experts}, ${p.topk}),`];
+    case "upsample":
+      return [`layers.UpSampling2D(${p.factor}),`];
+    case "convtranspose":
+      return [`layers.Conv2DTranspose(${p.filters}, ${p.kernel}, strides=${p.stride}, padding="${p.padding}"${act(p.activation)}),`];
     case "conv2d":
       return [`layers.Conv2D(${p.filters}, ${p.kernel}, strides=${p.stride}, padding="${p.padding}"${act(p.activation)}),`];
     case "depthwise":

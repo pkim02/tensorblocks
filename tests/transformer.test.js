@@ -6,7 +6,7 @@ import { test } from "node:test";
 import * as tf from "@tensorflow/tfjs";
 import { buildTemplate, analyze, TEMPLATES } from "../src/model/graph.js";
 import { useApp } from "../src/store.js";
-import { LAYERS, fmtShapeLong } from "../src/model/layers.js";
+import { LAYERS, PALETTE, fmtShapeLong } from "../src/model/layers.js";
 import { buildModel } from "../src/train/train.js";
 import { pytorchCode, kerasCode } from "../src/export/code.js";
 
@@ -223,11 +223,15 @@ test("exported PyTorch and Keras code carries the helper classes the model uses"
 });
 
 test("every new block has its Korean text and is placed in the palette", () => {
-  for (const type of ["patchembed", "posembed", "attention", "seqpool"]) {
+  const palette = PALETTE.flatMap((g) => g.items);
+  for (const type of ["patchembed", "posembed", "attention", "seqpool", "rmsnorm", "moe", "upsample", "convtranspose"]) {
     const def = LAYERS[type];
     assert.ok(def.ko && def.about && def.summary(def.defaults, { numClasses: 2 }), type);
-    assert.ok(!def.exportOnly, type);
+    assert.equal(!def.exportOnly, !["upsample", "convtranspose"].includes(type), type);
+    assert.ok(palette.includes(type), type);
+    for (const f of def.fields) assert.ok(f.label, type);
   }
+  assert.ok(PALETTE.some((g) => g.title === "트랜스포머 층"));
   assert.ok(!LAYERS.add.exportOnly);
 });
 
@@ -261,4 +265,94 @@ test("template: the heads mistake shows one red note, and its fix makes the mode
   a = analyze(s.nodes, s.edges, s.classes.length);
   assert.equal(a.ok, true);
   assert.equal(s.nodes.find((n) => n.data.type === "attention").data.params.heads, 4);
+});
+
+test("RMSNorm: D values on vectors and tokens; images get a LayerNorm fix", () => {
+  const tokens = run([["input", { size: 32 }], ["patchembed", { patch: 8, dim: 32 }], ["rmsnorm"], ["seqpool"], ["rmsnorm"], ["output"]]);
+  assert.equal(tokens.a.ok, true);
+  assert.equal(tokens.at("rmsnorm").params, 32); // nn.RMSNorm(32).weight
+  assert.equal(tokens.at("rmsnorm", 1).params, 32);
+  const image = run([["input", { size: 32 }], ["rmsnorm"], ["gap"], ["output"]]);
+  assert.deepEqual(image.at("rmsnorm").issue.fixes[0].action, { kind: "replace", type: "layernorm" });
+});
+
+test("MoE FFN: gate + experts of Linear-GELU-Linear, shape kept", () => {
+  const { a, at } = run([
+    ["input", { size: 32 }],
+    ["patchembed", { patch: 8, dim: 32 }],
+    ["moe", { experts: 4, topk: 2, hidden: 64 }],
+    ["seqpool"],
+    ["output"],
+  ]);
+  assert.equal(a.ok, true);
+  assert.deepEqual(at("moe").outShape, [16, 32]);
+  assert.equal(at("moe").params, torchParams.linear(32, 4) + 4 * (torchParams.linear(32, 64) + torchParams.linear(64, 32)));
+  assert.match(LAYERS.moe.about, /모든 전문가를 다 계산/); // the simplification is said out loud
+});
+
+test("Upsample2D and ConvTranspose2D grow images and stay export-only", () => {
+  const { a, at } = run([
+    ["input", { size: 32 }],
+    ["upsample", { factor: 2 }],
+    ["convtranspose", { filters: 8, kernel: 3, stride: 2, padding: "same" }],
+    ["convtranspose", { filters: 4, kernel: 3, stride: 2, padding: "valid" }],
+    ["gap"],
+    ["output"],
+  ]);
+  assert.equal(a.ok, true);
+  assert.equal(a.exportOnly, true);
+  assert.deepEqual(at("upsample").outShape, [64, 64, 3]);
+  assert.deepEqual(at("convtranspose").outShape, [128, 128, 8]);
+  assert.deepEqual(at("convtranspose", 1).outShape, [257, 257, 4]); // (128 - 1)·2 + 3
+  assert.equal(at("convtranspose").params, torchParams.conv(3, 3, 8));
+});
+
+test("RMSNorm and MoE build in TF.js with the canvas's parameters and train without errors", async () => {
+  const { a, nodes } = run(
+    [
+      ["input", { size: 32 }],
+      ["patchembed", { patch: 8, dim: 32 }],
+      ["posembed"],
+      ["rmsnorm"],
+      ["attention", { heads: 2, mask: "causal" }],
+      ["rmsnorm"],
+      ["moe", { experts: 3, topk: 1, hidden: 16 }],
+      ["seqpool"],
+      ["output"],
+    ],
+    [],
+    2,
+  );
+  assert.equal(a.ok, true);
+  const { model } = buildModel({ ...a, byId: new Map(nodes.map((n) => [n.id, n])) }, a.order[0], [32, 32, 3], 2);
+  assert.equal(trainableCount(model), a.trainableParams);
+  model.compile({ optimizer: tf.train.adam(0.003), loss: "categoricalCrossentropy" });
+  const xs = tf.randomUniform([8, 32, 32, 3]);
+  const ys = tf.oneHot(tf.tensor1d([0, 1, 0, 1, 0, 1, 0, 1], "int32"), 2).toFloat();
+  const h = await model.fit(xs, ys, { epochs: 2, batchSize: 4, verbose: 0 });
+  assert.ok(h.history.loss.every(Number.isFinite));
+  tf.dispose([model, xs, ys]);
+});
+
+test("exported code for RMSNorm, MoE, Upsample and ConvTranspose", () => {
+  const classes = [
+    { name: "A", samples: [] },
+    { name: "B", samples: [] },
+  ];
+  const settings = { epochs: 1, batchSize: 4, learningRate: 0.001 };
+  const tok = run(
+    [["input", { size: 32 }], ["patchembed", { patch: 8, dim: 32 }], ["rmsnorm"], ["moe", { experts: 2, topk: 1, hidden: 16 }], ["seqpool"], ["output"]],
+    [],
+    2,
+  );
+  const py = pytorchCode(tok.a, tok.nodes, classes, settings);
+  for (const s of ['if not hasattr(nn, "RMSNorm")', "nn.RMSNorm(32)", "class MoEFFN", "MoEFFN(32, hidden=16, num_experts=2, top_k=1)"])
+    assert.ok(py.includes(s), s);
+  const keras = kerasCode(tok.a, tok.nodes, classes, settings);
+  for (const s of ["class RMSNorm", "class MoEFFN", "MoEFFN(32, 16, 2, 1)"]) assert.ok(keras.includes(s), s);
+  const img = run([["input", { size: 32 }], ["upsample"], ["convtranspose", { filters: 8 }], ["gap"], ["output"]], [], 2);
+  const py2 = pytorchCode(img.a, img.nodes, classes, settings);
+  assert.ok(py2.includes("nn.Upsample(scale_factor=2)"));
+  assert.ok(py2.includes("nn.ConvTranspose2d(3, 8, kernel_size=3, stride=2, padding=1, output_padding=1)"));
+  assert.ok(kerasCode(img.a, img.nodes, classes, settings).includes('layers.Conv2DTranspose(8, 3, strides=2, padding="same", activation="relu")'));
 });

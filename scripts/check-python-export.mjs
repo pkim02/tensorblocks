@@ -37,6 +37,37 @@ const EXTRA = {
     spec: [["input", { size: 32 }], ["patchembed", { patch: 16, dim: 32 }], ["posembed"], ["dense", { units: 40, activation: "linear" }], ["add"], ["seqpool"], ["output"]],
     sides: [{ into: 4, from: 2, spec: [["dense", { units: 40, activation: "linear" }]] }],
   },
+  "small-llm-block": {
+    spec: [
+      ["input", { size: 32 }],
+      ["patchembed", { patch: 8, dim: 32 }],
+      ["posembed"],
+      ["rmsnorm"],
+      ["attention", { heads: 2, mask: "causal" }],
+      ["add"],
+      ["rmsnorm"],
+      ["moe", { experts: 4, topk: 2, hidden: 48 }],
+      ["add"],
+      ["seqpool"],
+      ["rmsnorm"],
+      ["output"],
+    ],
+    sides: [
+      { into: 5, from: 2, spec: [] },
+      { into: 8, from: 5, spec: [] },
+    ],
+  },
+  "upsample-convtranspose": {
+    spec: [
+      ["input", { size: 32 }],
+      ["conv2d", { filters: 8, stride: 2 }],
+      ["upsample", { factor: 2 }],
+      ["convtranspose", { filters: 8, kernel: 3, stride: 2, padding: "same" }],
+      ["convtranspose", { filters: 4, kernel: 5, stride: 2, padding: "valid", activation: "gelu" }],
+      ["gap"],
+      ["output"],
+    ],
+  },
 };
 
 const models = [
