@@ -192,7 +192,6 @@ export default function CanvasView() {
         <ViewTabs />
         <h1 className="visually-hidden">블록 캔버스</h1>
         <select
-          className="bar-extra"
           aria-label="모델 틀 불러오기"
           value={templateId ?? ""}
           disabled={training}
@@ -214,11 +213,11 @@ export default function CanvasView() {
             {errors ? `고칠 곳 ${errors}개` : `주의 ${warns}개`} 보기
           </button>
         ) : (
-          <span className="badge success bar-extra" role="status">
+          <span className="badge success" role="status">
             모양이 모두 맞아요
           </span>
         )}
-        <span className="bar-rest bar-extra">
+        <span className="bar-rest">
           <span className="small muted bar-params">
             학습할 값 <span className="num-inline">{fmtCount(a.trainableParams)}</span>개
           </span>

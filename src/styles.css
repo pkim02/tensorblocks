@@ -469,7 +469,6 @@ body { background: var(--page); color: var(--text); }
 /* Both panels folded: just the model on graph paper, as simple as Teachable Machine.
    Details come back when a block is clicked or a panel is opened; shape tags and
    correction notes stay, because they are the product. */
-.simple .bar-extra,
 .simple .undo-redo,
 .simple .react-flow__controls,
 .simple .react-flow__minimap,
