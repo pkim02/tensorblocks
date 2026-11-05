@@ -23,6 +23,7 @@ import ViewTabs from "./ViewTabs.jsx";
 import WorkPanel from "./WorkPanel.jsx";
 import { fieldPath } from "../data/hf.js";
 import { Glossed } from "./Term.jsx";
+import { useHistory, undo, redo, dragStart, dragEnd } from "../history.js";
 
 const CODE_ONLY_TIP = "브라우저에서 돌리기엔 커서 Colab에서 학습해요";
 // What the numbers on a line stand for, shown on hover.
@@ -59,11 +60,19 @@ export default function CanvasView() {
   const warns = a.issues.length - errors;
 
   // Delete / Backspace removes the selected block and joins its neighbours back up.
+  // Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y) step back and forward.
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key !== "Delete" && e.key !== "Backspace") return;
       if (e.target.closest("dialog[open]")) return;
       if (e.target.closest("input, select, textarea, [contenteditable]")) return;
+      const key = e.key.toLowerCase();
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && (key === "z" || key === "y")) {
+        e.preventDefault();
+        if (key === "y" || e.shiftKey) redo();
+        else undo();
+        return;
+      }
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
       const s = useApp.getState();
       if (s.selectedId) s.removeNode(s.selectedId);
       else s.edges.filter((x) => x.selected).forEach((x) => s.removeEdge(x.id));
@@ -129,6 +138,7 @@ export default function CanvasView() {
     const hint = s.dropHint;
     s.setDropHint(null);
     if (hint?.nodeId === node.id) s.moveOntoEdge(node.id, hint.edgeId);
+    dragEnd();
   };
 
   const dropPoint = (e) => {
@@ -170,6 +180,7 @@ export default function CanvasView() {
     <div className="canvas-view">
       <header className="work-bar">
         <ViewTabs />
+        <UndoRedo disabled={training} />
         <h1 className="visually-hidden">블록 캔버스</h1>
         <select
           aria-label="모델 틀 불러오기"
@@ -232,6 +243,7 @@ export default function CanvasView() {
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onNodeDrag={onNodeDrag}
+            onNodeDragStart={dragStart}
             onNodeDragStop={onNodeDragStop}
             connectionLineComponent={FitConnectionLine}
             onNodeClick={(_, n) => select(n.id)}
@@ -291,6 +303,21 @@ function Palette() {
         </div>
       ))}
     </aside>
+  );
+}
+
+function UndoRedo({ disabled }) {
+  const canUndo = useHistory((h) => h.canUndo);
+  const canRedo = useHistory((h) => h.canRedo);
+  return (
+    <div className="undo-redo" role="group" aria-label="되돌리기">
+      <button className="btn outline small" onClick={undo} disabled={disabled || !canUndo} title="이전으로 되돌리기 (Ctrl+Z)">
+        ↶ 이전
+      </button>
+      <button className="btn outline small" onClick={redo} disabled={disabled || !canRedo} title="다시 하기 (Ctrl+Shift+Z)">
+        이후 ↷
+      </button>
+    </div>
   );
 }
 

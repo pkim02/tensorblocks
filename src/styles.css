@@ -643,3 +643,7 @@ body { background: var(--page); color: var(--text); }
 }
 .note-close:hover { background: var(--gray-3); color: var(--text); }
 .note:has(.note-close) .note-title { padding-inline-end: 24px !important; }
+
+/* Undo / redo in the top bar */
+.undo-redo { display: inline-flex; gap: var(--space-1); }
+.undo-redo .btn { white-space: nowrap; }
