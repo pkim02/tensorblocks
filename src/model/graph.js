@@ -64,14 +64,6 @@ export const TEMPLATES = [
   {
     id: "tm",
     name: "Teachable Machine 방식",
-    intro: "이미지 분류 AI의 기본 구조예요",
-    steps: [
-      ["Image Input", "사진을 받아요"],
-      ["MobileNetV2", "사진에서 특징을 뽑아요"],
-      ["GlobalAvgPool", "특징을 한 줄로 요약해요"],
-      ["Dense", "요약을 보고 판단해요"],
-      ["Output", "클래스마다 확률을 내요"],
-    ],
     text: "사전학습된 MobileNet 위에 작은 층만 학습해요. 데이터가 적어도 잘 돼요.",
     spec: [["input", { size: 224 }], ["mobilenet"], ["gap"], ["dense", { units: 100 }], ["output"]],
   },
@@ -101,14 +93,6 @@ export const TEMPLATES = [
   {
     id: "vit",
     name: "나만의 작은 ViT",
-    intro: "사진을 조각 토큰으로 읽는 Vision Transformer예요",
-    steps: [
-      ["Patch Embedding", "사진을 8×8 조각 64개로 잘라 토큰으로 바꿔요"],
-      ["Position Embedding", "토큰마다 자리 번호를 더해요"],
-      ["Self-Attention", "토큰끼리 서로 살펴봐요"],
-      ["Dense ×2", "토큰마다 따로 판단해요"],
-      ["시퀀스 요약", "토큰 64개를 벡터 하나로 요약해요"],
-    ],
     text: "구글 ViT를 아주 작게 줄인 모델이에요. [LayerNorm → Self-Attention → 더하기]와 [LayerNorm → Dense 두 개 → 더하기]가 한 층이고, 그걸 두 번 쌓았어요. Transformer는 처음에 천천히 배워요. 학습률을 0.0003으로 낮추고 에폭을 60쯤으로 늘려 보세요.",
     spec: [
       ["input", { size: 64 }],

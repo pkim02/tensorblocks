@@ -45,9 +45,9 @@ export const useApp = create((set, get) => ({
     // The rules for which old line goes live in connectEdges, shared with the fit preview.
     set((s) => ({ templateId: null, edges: connectEdges(s.nodes, s.edges, s.classes.length, source, target) }));
   },
-  select: (selectedId) => set((s) => ({ selectedId, preview: null, panel: selectedId ? "block" : s.panel })),
+  select: (selectedId) => set((s) => ({ selectedId, preview: null, panel: selectedId ? "block" : s.panel, rightOpen: selectedId ? true : s.rightOpen })),
   // Picking a block in the palette only explains it; "블록 추가하기" puts it on the canvas.
-  previewBlock: (type) => set({ preview: type, selectedId: null, panel: "block" }),
+  previewBlock: (type) => set({ preview: type, selectedId: null, panel: "block", rightOpen: true }),
 
   loadTemplate: (id) => {
     const t = TEMPLATES.find((x) => x.id === id);
@@ -217,7 +217,12 @@ export const useApp = create((set, get) => ({
   view: "canvas",
   setView: (view) => set({ view }),
   panel: "data",
-  setPanel: (panel) => set({ panel }),
+  setPanel: (panel) => set({ panel, rightOpen: true }),
+  // The side panels fold away; with both folded the canvas becomes the simple view.
+  leftOpen: true,
+  rightOpen: true,
+  setLeftOpen: (leftOpen) => set({ leftOpen }),
+  setRightOpen: (rightOpen) => set({ rightOpen }),
 
   // VLM data: `fields` says which columns hold the photo, question and answer once read.
   dataset: defaultDataset(),

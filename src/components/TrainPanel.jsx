@@ -29,7 +29,7 @@ export default function TrainPanel() {
           들어가요.
         </p>
       ) : codeOnly ? (
-        <p className="callout small">코드 전용 블록이 있어서 브라우저에서 학습할 수 없어요. Colab 코드로 가져가서 돌려 주세요.</p>
+        <p className="callout small">이 모델은 커서 브라우저에서 학습할 수 없어요. Colab 코드로 가져가서 돌려 주세요.</p>
       ) : (
         <>
           <div className="grid fit settings-grid">

@@ -78,6 +78,11 @@ On the canvas the model runs left to right: Input ─64×64×3─▶ Conv2D ─�
 Correction notes hang under the broken line.
 ```
 
+Both side panels fold. A folded panel leaves a small tab on that canvas edge. With both folded the
+screen becomes the simple view, modelled on Teachable Machine: graph paper with no canvas tools, and
+white cards with only each block's name and Korean role. Shape tags and correction notes stay.
+Clicking a block opens the right panel again.
+
 ## Elevation & Depth
 
 Kit default: only floating things (menus, dialogs, toasts) have shadows. Blocks on the canvas are
