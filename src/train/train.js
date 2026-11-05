@@ -58,7 +58,10 @@ function makeLayers(node, info, numClasses) {
     case "output":
       return [tf.layers.dense({ units: numClasses, activation: "softmax" })];
     case "patchembed":
-      return [tf.layers.conv2d({ filters: +p.dim, kernelSize: +p.patch, strides: +p.patch, padding: "valid" }), tf.layers.reshape({ targetShape: info.outShape })];
+      return [
+        tf.layers.conv2d({ filters: +p.dim, kernelSize: +p.patch, strides: +p.patch, padding: "valid" }),
+        tf.layers.reshape({ targetShape: info.outShape }),
+      ];
     case "posembed":
       return [new PositionEmbedding({ learned: p.mode === "learned", cls: info.outShape[0] > info.inShape[0] })];
     case "attention":
@@ -91,9 +94,7 @@ export function buildModel(graph, start, inShape, numClasses) {
     const from = graph.inputsOf[id].map((s) => outs.get(s));
     if (from.some((x) => !x)) throw new Error("모델 연결을 따라가지 못했어요");
     const y =
-      node.data.type === "add"
-        ? tf.layers.add({}).apply(from)
-        : makeLayers(node, graph.nodeInfo[id], numClasses).reduce((x, layer) => layer.apply(x), from[0]);
+      node.data.type === "add" ? tf.layers.add({}).apply(from) : makeLayers(node, graph.nodeInfo[id], numClasses).reduce((x, layer) => layer.apply(x), from[0]);
     outs.set(id, y);
   }
   const last = ids[ids.length - 1];

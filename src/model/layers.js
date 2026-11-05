@@ -60,7 +60,11 @@ const summaryFix = (inShape) => ({
 function needsImageNotTokens(name, inShape) {
   const e = needsImage(name, inShape);
   if (!is2D(inShape)) return e;
-  const swap = { label: `시퀀스 요약으로 바꾸기 → ${fmtShape([inShape[1]])}`, note: "토큰 줄에서 같은 일을 해요", action: { kind: "replace", type: "seqpool" } };
+  const swap = {
+    label: `시퀀스 요약으로 바꾸기 → ${fmtShape([inShape[1]])}`,
+    note: "토큰 줄에서 같은 일을 해요",
+    action: { kind: "replace", type: "seqpool" },
+  };
   return { ...e, fixes: [swap, ...e.fixes] };
 }
 
@@ -821,7 +825,11 @@ export const LAYERS = {
             title: "조각이 딱 나뉘지 않아요",
             text: `${h}×${w} 사진은 ${k}×${k} 조각으로 남김없이 자를 수 없어요. 세로와 가로가 모두 조각 크기로 나눠떨어져야 해요.`,
             fixes: [
-              ...ok.map((v) => ({ label: `조각 크기를 ${v}×${v}로`, note: `→ 토큰 ${(h / v) * (w / v)}개`, action: { kind: "setParam", key: "patch", value: v } })),
+              ...ok.map((v) => ({
+                label: `조각 크기를 ${v}×${v}로`,
+                note: `→ 토큰 ${(h / v) * (w / v)}개`,
+                action: { kind: "setParam", key: "patch", value: v },
+              })),
               { label: "이 블록 지우기", action: { kind: "remove" } },
             ],
           },
@@ -836,7 +844,15 @@ export const LAYERS = {
             level: "warn",
             title: "토큰이 너무 많아요",
             text: `토큰이 ${num(out[0])}개예요. Self-Attention은 토큰끼리 모두 짝을 지어 보기 때문에, 브라우저에서는 아주 느리거나 멈출 수 있어요.`,
-            fixes: bigger ? [{ label: `조각 크기를 ${bigger}×${bigger}로`, note: `→ 토큰 ${(h / bigger) * (w / bigger)}개`, action: { kind: "setParam", key: "patch", value: bigger } }] : [],
+            fixes: bigger
+              ? [
+                  {
+                    label: `조각 크기를 ${bigger}×${bigger}로`,
+                    note: `→ 토큰 ${(h / bigger) * (w / bigger)}개`,
+                    action: { kind: "setParam", key: "patch", value: bigger },
+                  },
+                ]
+              : [],
           },
         };
       }
@@ -946,7 +962,9 @@ export const LAYERS = {
         return {
           error: {
             ...needsTokens("시퀀스 요약", inShape),
-            fixes: [{ label: `GlobalAvgPool로 바꾸기 → ${fmtShape([inShape[2]])}`, note: "이미지에서 같은 일을 해요", action: { kind: "replace", type: "gap" } }],
+            fixes: [
+              { label: `GlobalAvgPool로 바꾸기 → ${fmtShape([inShape[2]])}`, note: "이미지에서 같은 일을 해요", action: { kind: "replace", type: "gap" } },
+            ],
           },
         };
       }
@@ -1040,7 +1058,9 @@ export const LAYERS = {
     group: "image",
     exportOnly: true,
     defaults: { factor: 2 },
-    fields: [{ key: "factor", label: "배율", type: "select", options: [2, 4].map((v) => ({ value: v, label: `${v}배` })), hint: "2배면 가로·세로가 두 배가 돼요." }],
+    fields: [
+      { key: "factor", label: "배율", type: "select", options: [2, 4].map((v) => ({ value: v, label: `${v}배` })), hint: "2배면 가로·세로가 두 배가 돼요." },
+    ],
     about:
       "칸마다 값을 옆과 아래로 복사해서 이미지를 크게 만들어요. MaxPool의 반대예요. 그림을 만드는 생성 모델(U-Net, 오토인코더)이 써요. 지금은 분류 출력만 있어서 코드 내보내기 전용이에요.",
     summary: (p) => `가로·세로 ${p.factor}배`,
@@ -1202,7 +1222,10 @@ export function torchLines(type, p, inShape, outShape) {
       const same = p.padding === "same";
       const pd = same ? Math.floor((p.kernel - 1) / 2) : 0;
       const extra = same ? p.stride - 1 - (p.kernel - 1 - 2 * pd) : 0;
-      return [`nn.ConvTranspose2d(${inShape[2]}, ${p.filters}, kernel_size=${p.kernel}, stride=${p.stride}, padding=${pd}, output_padding=${extra}),`, ...act(p.activation)];
+      return [
+        `nn.ConvTranspose2d(${inShape[2]}, ${p.filters}, kernel_size=${p.kernel}, stride=${p.stride}, padding=${pd}, output_padding=${extra}),`,
+        ...act(p.activation),
+      ];
     }
     case "dropout":
       return [`nn.Dropout(${p.rate}),`];

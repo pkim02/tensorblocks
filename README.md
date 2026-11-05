@@ -24,8 +24,10 @@ npm run dev
 ## 블록 캔버스에서 되는 것
 
 - **VLM 예시 (구글 PaliGemma 2 방식)**: 모델 틀 맨 위의 "VLM: 사진 보고 답하기". 사진(Image Input → SigLIP → Projector)과 질문(Text Input → Embedding) 두 갈래가 **Concat**에서 합쳐져 Gemma 2 → Text Output으로 가요. 블록 수·모양·값 수는 실제 PaliGemma 2 3B와 같아요 (3.05B). "실수 체험: VLM에서 Projector 빠뜨리기"로 토큰 길이가 안 맞는 에러(1,152 vs 2,304)와 자동 수정을 보여 줄 수 있어요.
-- 블록 28종: VLM 블록 8개(Text Input, Embedding, SigLIP, To Tokens, Projector, Concat, Gemma 2, Text Output), 사전학습 모델 6개(MobileNetV2, EfficientNet-B0, ViT-B/16 (Hugging Face), ResNet-18/50, VGG16), 이미지 층 7개(Conv2D, DepthwiseConv2D, MaxPool, AvgPool, GlobalAvgPool, GlobalMaxPool, Flatten), 벡터 층(Dense, LayerNorm), 활성화(ReLU·LeakyReLU·ELU·SELU·Swish·Sigmoid·Tanh), Dropout, BatchNorm, 입력·출력.
-- MobileNetV2와 직접 쌓은 층은 브라우저에서 바로 학습돼요. 나머지 사전학습 모델은 무거워서 "코드 전용"이에요 (Colab에서 학습).
+- 블록 37종: VLM 블록 8개(Text Input, Embedding, SigLIP, To Tokens, Projector, Concat, Gemma 2, Text Output), 사전학습 모델 6개(MobileNetV2, EfficientNet-B0, ViT-B/16 (Hugging Face), ResNet-18/50, VGG16), 이미지 층 10개(Conv2D, DepthwiseConv2D, MaxPool, AvgPool, GlobalAvgPool, GlobalMaxPool, Flatten, Patch Embedding, Upsample2D, ConvTranspose2D), 벡터 층(Dense, LayerNorm, RMSNorm), 트랜스포머 층 4개(Position Embedding, Self-Attention, MoE FFN, 시퀀스 요약), 활성화(ReLU·LeakyReLU·ELU·SELU·Swish·GELU·Sigmoid·Tanh), Dropout, BatchNorm, Add, 입력·출력.
+- MobileNetV2와 직접 쌓은 층(Add로 만든 skip connection과 트랜스포머 층 포함)은 브라우저에서 바로 학습돼요. 나머지 사전학습 모델은 무거워서 "코드 전용"이에요 (Colab에서 학습). Upsample2D와 ConvTranspose2D도 아직 분류 출력뿐이라 코드 전용이에요.
+- **모양은 세 가지**예요: 이미지 `세로×가로×채널`, 벡터 `N`, 토큰 줄 `토큰 수×칸 수`(마우스를 올리면 "토큰 64개 × 64칸"). Dense·LayerNorm·Dropout·Activation은 토큰 줄에서 토큰마다 마지막 칸들에만 적용돼요.
+- **트랜스포머 모델 틀**: "나만의 작은 ViT"(Patch Embedding → Position Embedding → [LayerNorm → Self-Attention → 더하기] → [LayerNorm → Dense 두 개 → 더하기] ×2 → 시퀀스 요약), "ConvNeXt 블록", "실수 체험: 헤드 수가 칸 수로 안 나눠짐". 시퀀스 요약에서 CLS 토큰을 고르면 Position Embedding이 맨 앞에 토큰 1개를 붙여요.
 - 블록을 끌어다 놓거나 눌러서 넣기. 선 위에 놓으면 그 사이에 끼워져요.
 - 모든 연결선에 텐서 모양(예: `32×32×16`)이 표시돼요.
 - 모양이 안 맞으면 선이 빨개지고, 무엇이 틀렸는지와 고치는 버튼이 나와요 (예: Conv 뒤에 바로 Dense → GlobalAvgPool 또는 Flatten 넣기).
@@ -59,7 +61,9 @@ npm run dev
 | `src/model/layers.js` | 블록 목록: 모양 계산, 에러와 고치는 방법, PyTorch/Keras 코드 한 줄 |
 | `src/model/graph.js` | 캔버스 그래프를 따라가며 모든 연결의 모양과 문제를 계산 (VLM처럼 두 갈래가 합쳐지는 구조 포함), 모델 틀 |
 | `src/store.js` | 앱 상태 (zustand): 클래스·사진, 블록·연결, 고치기 동작, 학습 상태 |
-| `src/train/train.js` | TF.js 학습. MobileNetV2(Teachable Machine과 같은 가중치)는 고정하고 뒤쪽 블록만 학습 |
+| `src/train/train.js` | TF.js 학습. 캔버스 그래프를 함수형 모델로 만들어요(갈래·Add 포함). MobileNetV2(Teachable Machine과 같은 가중치)는 고정하고 뒤쪽 블록만 학습 |
+| `src/train/blocks.js` | TF.js에 없는 층: Position Embedding, Self-Attention, 시퀀스 요약, RMSNorm, MoE FFN |
+| `src/export/pyhelpers.js` | 내보낸 PyTorch·Keras 코드에 들어가는 보조 클래스 (PatchEmbed, SelfAttention 등) |
 | `src/three/scene.js` | 3D 장면: 텐서 상자, 특징 지도 판, 카메라 이동, 블록 클릭 |
 | `src/export/code.js` | Colab 노트북(.ipynb), PyTorch / Keras 학습 스크립트 생성, zip 내보내기 |
 | `src/components/` | 화면: 데이터, 모델·학습, 미리보기, 블록 캔버스, 3D, Colab 코드 |
@@ -73,6 +77,12 @@ npm run dev
   - 실행 후 `git status`로 확인해서, 내가 작업하지 않은 파일이 바뀌었으면 `git restore 파일경로`로 되돌리고 올려 주세요.
 - 화면은 라이트 모드 전용이에요 (`index.html`의 `data-mode="light"`).
 - 배포: `main`에 push(또는 PR 합치기)하면 1~2분 뒤 https://tensorblocks.netlify.app 에 자동으로 올라가요. 그러니 `main`에는 잘 돌아가는 것만 합쳐 주세요. 급할 때는 `npm run deploy`로 직접 올릴 수도 있어요 (Netlify HAPE 팀 로그인 필요).
+
+### 블록을 바꿨을 때 더 확인할 것
+
+- `npm test`: 모양·값 수가 PyTorch 공식과 같은지, TF.js 모델의 값 수가 캔버스와 같은지 봐요 (`tests/transformer.test.js`).
+- `node scripts/check-python-export.mjs`: 내보낸 PyTorch·Keras 코드를 사진 몇 장으로 1 에폭 실제로 돌리고, 프레임워크가 센 학습할 값 수를 캔버스와 비교해요. 노트북 코드 칸의 문법도 확인해요. torch·torchvision이 필요하고, Keras까지 보려면 tensorflow도 필요해요 (`--no-keras`로 건너뛰기).
+- `node scripts/check-browser-training.mjs "vit|60|0.0003" "cnn|20"`: 크롬(헤드리스)에서 예제 도형 데이터로 모델 틀을 학습해서 loss가 줄어드는지 봐요. 인자는 `모델 틀|에폭|학습률`이에요.
 
 ### 머지하기 전 확인할 것
 
