@@ -37,16 +37,20 @@ export function buildChain(spec, origin = { x: 0, y: 0 }) {
   return { nodes, edges };
 }
 
-// Template with an optional side branch: { spec, side: { into, spec, from } }.
+// Template with optional side branches: { spec, side: { into, spec, from } } or sides: [...].
 // `from` forks the branch off that main-line block; an empty spec is a bare skip connection.
 export function buildTemplate(t) {
   const main = buildChain(t.spec);
-  if (!t.side) return main;
-  const n = t.side.spec.length;
-  const side = t.side.spec.map(([type, params], k) => makeNode(type, sidePosition({ x: 0, y: 0 }, t.side.into, n, k), params));
-  const path = [...(t.side.from === undefined ? [] : [main.nodes[t.side.from]]), ...side, main.nodes[t.side.into]];
-  const edges = [...main.edges, ...path.slice(1).map((nd, k) => makeEdge(path[k].id, nd.id))];
-  return { nodes: [...main.nodes, ...side], edges };
+  const nodes = [...main.nodes];
+  const edges = [...main.edges];
+  for (const b of t.sides ?? (t.side ? [t.side] : [])) {
+    const n = b.spec.length;
+    const side = b.spec.map(([type, params], k) => makeNode(type, sidePosition({ x: 0, y: 0 }, b.into, n, k), params));
+    const path = [...(b.from === undefined ? [] : [main.nodes[b.from]]), ...side, main.nodes[b.into]];
+    nodes.push(...side);
+    edges.push(...path.slice(1).map((nd, k) => makeEdge(path[k].id, nd.id)));
+  }
+  return { nodes, edges };
 }
 
 export const TEMPLATES = [
@@ -242,6 +246,9 @@ function analyzeUncached(nodes, edges, numClasses) {
     return info;
   };
 
+  const firstPos = r.chain.find((id) => byId.get(id).data.type === "posembed");
+  const clsWanted = r.order.some((id) => byId.get(id).data.type === "seqpool" && byId.get(id).data.params.mode === "cls");
+
   let branch = [];
   for (const id of r.order) {
     const node = byId.get(id);
@@ -275,6 +282,9 @@ function analyzeUncached(nodes, edges, numClasses) {
           }
         : null;
     const ctx = { numClasses, afterInput: at > 0 && byId.get(r.chain[at - 1]).data.type === "input" };
+    // CLS token: a 시퀀스 요약 set to CLS makes the first Position Embedding put one in front.
+    if (node.data.type === "posembed") ctx.cls = clsWanted && id === firstPos;
+    if (node.data.type === "seqpool") ctx.clsReady = firstPos !== undefined && (at < 0 || r.chain.indexOf(firstPos) < at);
     if (def.merge && sources.length > 1) ctx.side = { shape: shapes[1], shapes: shapes.slice(1) };
     const info = visit(node, shapes[0] ?? null, blocked, ctx, tooMany);
     info.inShapes = shapes;

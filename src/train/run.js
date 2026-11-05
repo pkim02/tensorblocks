@@ -43,6 +43,7 @@ export async function startTraining() {
   try {
     const result = await trainModel({
       chainNodes,
+      graph: { order: a.order, inputsOf: a.inputsOf, nodeInfo: a.nodeInfo, byId },
       classes,
       settings: s.settings,
       onStatus: (message) => update({ message }),
@@ -59,7 +60,7 @@ export async function startTraining() {
       ...result,
       signature: a.signature,
       classNames: classes.map((c) => c.name),
-      blockNames: Object.fromEntries(chainNodes.map((n) => [n.id, LAYERS[n.data.type].name])),
+      blockNames: Object.fromEntries(a.order.map((id) => [id, LAYERS[byId.get(id).data.type].name])),
     });
     update({ status: "done", message: stopRequested ? "중간에 멈췄어요. 여기까지 배운 모델로 시험해 볼 수 있어요." : "학습이 끝났어요." });
   } catch (e) {

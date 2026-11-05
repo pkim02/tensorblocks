@@ -3,6 +3,7 @@
 // Every in_channels / in_features is filled in from the shapes the canvas already worked out.
 import JSZip from "jszip";
 import { LAYERS, torchLines, kerasLines, torchShape, fmtShape, fmtCount } from "../model/layers.js";
+import { torchHelpers, kerasHelpers } from "./pyhelpers.js";
 
 const pad = (lines, n) => lines.map((l) => " ".repeat(n) + l);
 const pyStr = (s) => JSON.stringify(s);
@@ -93,19 +94,6 @@ function branchVars(analysis, backbone) {
   return { vars, blocks };
 }
 
-// nn.LayerNorm normalizes the last axis, but PyTorch images keep channels second.
-const LAYER_NORM_2D = `class LayerNorm2d(nn.Module):
-    # 이미지의 채널마다 정규화해요 (ConvNeXt와 같은 방식).
-    def __init__(self, channels):
-        super().__init__()
-        self.norm = nn.LayerNorm(channels)
-
-    def forward(self, x):
-        return self.norm(x.permute(0, 2, 3, 1)).permute(0, 3, 1, 2)
-
-
-`;
-
 function torchBranched(analysis, nodes, backbone) {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const { vars, blocks } = branchVars(analysis, backbone);
@@ -151,8 +139,15 @@ function folders(classes) {
 
 // ── PyTorch pieces (shared by the .py script and the notebook) ──────────
 
+// Every block the model runs, with what reaches it: the helper classes are picked from this.
+function usedBlocks(analysis, nodes) {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  return analysis.order.map((id) => ({ ...byId.get(id).data, inShape: analysis.nodeInfo[id].inShape }));
+}
+
 function torchParts(analysis, nodes, classes, settings) {
   const { size, backbone, head } = describe(analysis, nodes);
+  const helpers = torchHelpers(usedBlocks(analysis, nodes));
   const body = [];
   for (const { node, info } of head) {
     const t = node.data.type;
@@ -161,6 +156,7 @@ function torchParts(analysis, nodes, classes, settings) {
   }
 
   const imports = [
+    ...helpers.imports,
     "import torch",
     "from torch import nn",
     "from torch.utils.data import DataLoader, random_split",
@@ -220,8 +216,7 @@ print(f"사진 {len(dataset)}장, 클래스 {CLASSES}")`;
         return self`
     : "";
 
-  const usesLayerNorm2d = analysis.order.some((id) => nodes.find((n) => n.id === id).data.type === "layernorm" && analysis.nodeInfo[id].inShape?.length === 3);
-  const model = `${usesLayerNorm2d ? LAYER_NORM_2D : ""}class TensorBlocksNet(nn.Module):
+  const model = `${helpers.code}class TensorBlocksNet(nn.Module):
     # 입력: 3×${size}×${size} (채널×세로×가로)
     def __init__(self):
         super().__init__()
@@ -526,8 +521,13 @@ function kerasBranched(analysis, nodes, backbone) {
     const { type, params } = byId.get(id).data;
     const from = analysis.inputsOf[id].map((s) => vars.get(s));
     const shape = fmtShape(analysis.nodeInfo[id].outShape);
+    const info = analysis.nodeInfo[id];
     if (type === "add") out.push(`${vars.get(id)} = layers.Add()([${from.join(", ")}])  # → ${shape}`);
-    else out.push(`${vars.get(id)} = ${kerasLines(type, params)[0].replace(/,$/, "")}(${from[0]})  # ${LAYERS[type].name} → ${shape}`);
+    else {
+      // A block can be several Keras layers in a row (Patch Embedding: Conv2D, then Reshape).
+      const call = kerasLines(type, params, info.inShape, info.outShape).reduce((x, l) => `${l.replace(/,$/, "")}(${x})`, from[0]);
+      out.push(`${vars.get(id)} = ${call}  # ${LAYERS[type].name} → ${shape}`);
+    }
   }
   out.push(`model = keras.Model(inputs, ${vars.get(analysis.chain[analysis.chain.length - 1])})`);
   return out.join("\n");
@@ -551,8 +551,9 @@ export function kerasCode(analysis, nodes, classes, settings) {
   }
   for (const { node, info } of head) {
     const t = node.data.type;
-    layersOut.push(`# ${LAYERS[t].name} → ${fmtShape(info.outShape)}`, ...kerasLines(t, node.data.params));
+    layersOut.push(`# ${LAYERS[t].name} → ${fmtShape(info.outShape)}`, ...kerasLines(t, node.data.params, info.inShape, info.outShape));
   }
+  const helpers = kerasHelpers(usedBlocks(analysis, nodes));
   const baseDef = backbone ? `base = ${backbone.keras.make}\nbase.trainable = False  # 사전학습 가중치는 고정\n\n` : "";
   const modelDef = isBranched(analysis)
     ? kerasBranched(analysis, nodes, backbone)
@@ -570,7 +571,7 @@ TensorBlocks에서 만든 모델을 그대로 옮긴 Keras 학습 코드예요.
 실행:
   python train_keras.py
 """
-import keras
+${helpers.imports.map((l) => `${l}\n`).join("")}import keras
 from keras import layers
 
 DATA_DIR = "data"
@@ -585,7 +586,7 @@ train_ds, val_ds = keras.utils.image_dataset_from_directory(
 )
 NUM_CLASSES = len(train_ds.class_names)
 
-${baseDef}${modelDef}
+${helpers.code}${baseDef}${modelDef}
 model.summary()
 model.compile(optimizer=keras.optimizers.Adam(LEARNING_RATE), loss="categorical_crossentropy", metrics=["accuracy"])
 model.fit(train_ds, validation_data=val_ds, epochs=EPOCHS)
