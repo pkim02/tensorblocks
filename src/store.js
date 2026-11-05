@@ -62,7 +62,7 @@ export const useApp = create((set, get) => ({
 
   loadTemplate: (id) => {
     const t = TEMPLATES.find((x) => x.id === id);
-    set({ templateId: id, selectedId: null, preview: null, ...buildTemplate(t) });
+    set({ templateId: id, selectedId: null, preview: null, dismissed: [], ...buildTemplate(t) });
   },
 
   // Adds a block that isn't wired to anything: the learner draws its lines. Dropped on a
@@ -118,15 +118,31 @@ export const useApp = create((set, get) => ({
     const s = get();
     const node = s.nodes.find((n) => n.id === nodeId);
     if (!node || node.deletable === false) return;
-    const into = mainInto(s, nodeId);
-    const edges = s.edges.filter((e) => e.source !== nodeId && e.target !== nodeId);
-    // Joins every outgoing link back up, unless that link already exists (the other side of a skip).
-    for (const out of s.edges.filter((e) => e.source === nodeId)) {
-      if (into && !edges.some((e) => e.source === into.source && e.target === out.target)) edges.push(makeEdge(into.source, out.target));
-    }
-    set({ nodes: s.nodes.filter((n) => n.id !== nodeId), edges, selectedId: s.selectedId === nodeId ? null : s.selectedId, templateId: null });
+    set({ nodes: s.nodes.filter((n) => n.id !== nodeId), edges: edgesWithout(s, nodeId), selectedId: s.selectedId === nodeId ? null : s.selectedId, templateId: null });
     get().tidy();
   },
+
+  // A block already on the canvas, dragged onto a line: it leaves its old spot (the
+  // blocks around it join back up) and slots in between the line's two ends.
+  moveOntoEdge: (nodeId, edgeId) => {
+    const s = get();
+    const edges = edgesWithout(s, nodeId);
+    const edge = edges.find((e) => e.id === edgeId);
+    if (!edge || edge.source === nodeId || edge.target === nodeId) return;
+    set({
+      edges: [...edges.filter((e) => e !== edge), makeEdge(edge.source, nodeId), makeEdge(nodeId, edge.target)],
+      selectedId: nodeId,
+      preview: null,
+      panel: "block",
+      templateId: null,
+    });
+    get().tidy();
+  },
+
+  // Correction notes the learner closed, by what they say; a changed problem shows again.
+  dismissed: [],
+  dismissIssue: (key) => set((s) => ({ dismissed: [...s.dismissed, key] })),
+  showIssues: () => set({ dismissed: [] }),
 
   removeEdge: (edgeId) => set((s) => ({ templateId: null, edges: s.edges.filter((e) => e.id !== edgeId) })),
 
@@ -236,6 +252,19 @@ function mainInto(s, nodeId) {
   return into.find((e) => i > 0 && e.source === a.chain[i - 1]) || into[0];
 }
 
+export const issueKey = (issue) => `${issue.nodeId ?? ""}|${issue.title}|${issue.text}`;
+
+// The lines left once a block is taken out: every outgoing link joins back up to what fed
+// it, unless that link already exists (the other side of a skip).
+export function edgesWithout(s, nodeId) {
+  const into = mainInto(s, nodeId);
+  const edges = s.edges.filter((e) => e.source !== nodeId && e.target !== nodeId);
+  for (const out of s.edges.filter((e) => e.source === nodeId)) {
+    if (into && !edges.some((e) => e.source === into.source && e.target === out.target)) edges.push(makeEdge(into.source, out.target));
+  }
+  return edges;
+}
+
 // Nudges a new block down until it doesn't sit on top of another one.
 function freeSpot(nodes, pos) {
   const p = { ...pos };
@@ -244,12 +273,14 @@ function freeSpot(nodes, pos) {
   return p;
 }
 
-export function nearestEdge(s, pos) {
+// `skip` leaves out the lines touching that block (the one being dragged).
+export function nearestEdge(s, pos, skip) {
   const byId = new Map(s.nodes.map((n) => [n.id, n]));
   const p = { x: pos.x + NODE_W / 2, y: pos.y + 45 };
   let best = null;
   let bestD = 70;
   for (const e of s.edges) {
+    if (skip && (e.source === skip || e.target === skip)) continue;
     const a = byId.get(e.source),
       b = byId.get(e.target);
     if (!a || !b) continue;

@@ -13,7 +13,7 @@ import {
   useConnection,
   useReactFlow,
 } from "@xyflow/react";
-import { useApp, useAnalysis, nearestEdge } from "../store.js";
+import { useApp, useAnalysis, nearestEdge, edgesWithout } from "../store.js";
 import { LAYERS, PALETTE, fmtShape, fmtCount, torchLines, torchShape } from "../model/layers.js";
 import { TEMPLATES, NODE_W, checkConnect, checkInsert } from "../model/graph.js";
 import AuthButton from "./AuthButton.jsx";
@@ -94,8 +94,10 @@ export default function CanvasView() {
     [rf],
   );
 
-  // Pans to the first problem so it is never off-screen during a demo.
+  // Pans to the first problem so it is never off-screen during a demo, and brings back
+  // any correction notes the learner closed.
   const showProblem = () => {
+    useApp.getState().showIssues();
     const issue = a.issues.find((i) => i.level === "error" && i.nodeId) || a.issues.find((i) => i.nodeId);
     const n = issue && rf.getNode(issue.nodeId);
     if (n) rf.setCenter(n.position.x, n.position.y + 120, { zoom: Math.max(rf.getZoom(), 0.9), duration: 300 });
@@ -109,6 +111,25 @@ export default function CanvasView() {
     if (keepView.current) keepView.current = false;
     else fit();
   }, [count, fit, projectRevision]);
+
+  // A block already on the canvas, dragged over a line: same green/red hint as a palette
+  // drag, and letting go slots it in between. Input and output blocks only ever sit at the ends.
+  const onNodeDrag = (_, node) => {
+    const s = useApp.getState();
+    const def = LAYERS[node.data.type];
+    if (def.source || def.terminal) return;
+    // Only lines drawn on screen now; the fit is judged as if the block had already left its spot.
+    const edge = nearestEdge(s, node.position, node.id);
+    const rest = edgesWithout(s, node.id);
+    s.setDropHint(edge ? { edgeId: edge.id, nodeId: node.id, state: checkInsert(edge.id, node.data.type, s.nodes, rest, s.classes.length, node.data.params) } : null);
+  };
+
+  const onNodeDragStop = (_, node) => {
+    const s = useApp.getState();
+    const hint = s.dropHint;
+    s.setDropHint(null);
+    if (hint?.nodeId === node.id) s.moveOntoEdge(node.id, hint.edgeId);
+  };
 
   const dropPoint = (e) => {
     const p = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY });
@@ -210,6 +231,8 @@ export default function CanvasView() {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onNodeDrag={onNodeDrag}
+            onNodeDragStop={onNodeDragStop}
             connectionLineComponent={FitConnectionLine}
             onNodeClick={(_, n) => select(n.id)}
             onPaneClick={() => select(null)}
@@ -330,7 +353,9 @@ function BlockNode({ id, data }) {
   // While a line is being drawn, every block it could end on says whether the shapes fit.
   const drawing = useConnection((c) => (c.inProgress ? { from: c.fromNode?.id, end: c.fromHandle?.type } : null));
   const canEnd = drawing && drawing.from !== id && (drawing.end === "target" ? !def.terminal : !def.source);
-  const fit = canEnd ? connectState(drawing.from, drawing.end, id) : null;
+  // A block being dragged over a line shows the same colour as the line, which it covers.
+  const dropFit = useApp((s) => (s.dropHint?.nodeId === id ? s.dropHint.state : null));
+  const fit = canEnd ? connectState(drawing.from, drawing.end, id) : dropFit;
   const cls = [
     "layer-block",
     `g-${def.group}`,
@@ -344,7 +369,7 @@ function BlockNode({ id, data }) {
   return (
     <div className={cls.filter(Boolean).join(" ")}>
       {pin && <span className="data-pin">{pin}</span>}
-      {fit && <span className={`fit-tag fit-tag-${fit}`}>{FIT_LABEL[fit]}</span>}
+      {canEnd && fit && <span className={`fit-tag fit-tag-${fit}`}>{FIT_LABEL[fit]}</span>}
       {!def.source && <Handle type="target" position={Position.Left} />}
       <div className="block-head">
         <span className="block-name">{def.name}</span>
@@ -365,7 +390,7 @@ function BlockNode({ id, data }) {
       </div>
       {!def.terminal && <Handle type="source" position={Position.Right} />}
       {extra.map((issue, i) => (
-        <IssueNote key={i} issue={issue} className="note-side nodrag" />
+        <IssueNote key={i} issue={issue} closable className="note-side nodrag" />
       ))}
     </div>
   );
@@ -413,7 +438,7 @@ function ShapeEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, tar
           {!info ? "연결 안 됨" : info.blocked ? "?" : fmtShape(info.shape)}
         </div>
         {level && !info.side && (
-          <IssueNote issue={info.issue} className="note-edge nodrag nopan" style={{ transform: `translate(-50%, 0) translate(${lx}px, ${ly + 66}px)` }} />
+          <IssueNote issue={info.issue} closable className="note-edge nodrag nopan" style={{ transform: `translate(-50%, 0) translate(${lx}px, ${ly + 66}px)` }} />
         )}
       </EdgeLabelRenderer>
     </>

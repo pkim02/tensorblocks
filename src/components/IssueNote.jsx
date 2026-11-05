@@ -1,11 +1,15 @@
-import { useApp } from "../store.js";
+import { useApp, issueKey } from "../store.js";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { analyze } from "../model/graph.js";
 import { Glossed } from "./Term.jsx";
 
 // The red-pen correction note: what's wrong in one sentence, and the fix as a button.
-export default function IssueNote({ issue, compact = false, className = "", style }) {
+export default function IssueNote({ issue, compact = false, closable = false, className = "", style }) {
   const applyFix = useApp((s) => s.applyFix);
+  const key = issueKey(issue);
+  const hidden = useApp((s) => closable && s.dismissed.includes(key));
+  const dismiss = useApp((s) => s.dismissIssue);
+  if (hidden) return null;
   return (
     <div
       className={`note ${issue.level} ${compact ? "compact" : ""} ${className}`}
@@ -13,6 +17,11 @@ export default function IssueNote({ issue, compact = false, className = "", styl
       role={issue.level === "error" ? "alert" : undefined}
       onClick={(e) => e.stopPropagation()}
     >
+      {closable && (
+        <button className="note-close" aria-label="이 안내 닫기" title="닫기 (위쪽 배지를 누르면 다시 보여요)" onClick={() => dismiss(key)}>
+          ×
+        </button>
+      )}
       <p className="note-title" style={{ paddingInline: "var(--space-1)" }}>{issue.title}</p>
       <p className="note-text" style={{ paddingInline: "var(--space-1)" }}>
         <Glossed text={issue.text} />

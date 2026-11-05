@@ -419,7 +419,7 @@ export function checkConnect(sourceId, targetId, nodes, edges, numClasses) {
 }
 
 // Would dropping a new `type` block onto this line fit on both sides?
-export function checkInsert(edgeId, type, nodes, edges, numClasses) {
+export function checkInsert(edgeId, type, nodes, edges, numClasses, params) {
   const edge = edges.find((e) => e.id === edgeId);
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const src = edge && byId.get(edge.source);
@@ -430,7 +430,7 @@ export function checkInsert(edgeId, type, nodes, edges, numClasses) {
   const n = Math.max(numClasses, 2);
   const a = analyze(nodes, edges, numClasses);
   const shape = probeShape(src.id, nodes, edges, numClasses, a);
-  const first = fits(def, { ...def.defaults }, [shape], { numClasses: n, afterInput: src.data.type === "input" });
+  const first = fits(def, { ...def.defaults, ...params }, [shape], { numClasses: n, afterInput: src.data.type === "input" });
   if (first.state !== "ok" || !first.out) return first.state === "ok" ? "unknown" : first.state;
   const tdef = LAYERS[tgt.data.type];
   const into = edges.filter((e) => e.target === tgt.id);

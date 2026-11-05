@@ -108,3 +108,39 @@ test("shape errors read naturally and keep the PyTorch message apart", () => {
   assert.match(issue.code, /mat1 and mat2/);
 });
 
+
+test("a loose block dragged onto a line slots in between", () => {
+  const s = fresh();
+  const id = s.addBlock("dropout", { x: 0, y: 900 }, false);
+  const line = useApp.getState().edges.find((e) => e.source === byType(s, "dense").id);
+  useApp.getState().moveOntoEdge(id, line.id);
+  const after = useApp.getState();
+  assert.ok(after.edges.some((e) => e.source === line.source && e.target === id));
+  assert.ok(after.edges.some((e) => e.source === id && e.target === line.target));
+  assert.ok(!after.edges.some((e) => e.id === line.id));
+  assert.equal(after.panel, "block");
+});
+
+test("a wired block moved onto another line leaves its old spot joined up", () => {
+  const s = fresh();
+  const drop = byType(s, "dropout");
+  const before = s.edges.find((e) => e.target === drop.id).source; // Dense
+  const after = s.edges.find((e) => e.source === drop.id).target; // Output
+  const line = s.edges.find((e) => e.target === byType(s, "flatten").id); // MaxPool → Flatten
+  s.moveOntoEdge(drop.id, line.id);
+  const t = useApp.getState();
+  assert.ok(t.edges.some((e) => e.source === before && e.target === after));
+  assert.ok(t.edges.some((e) => e.source === line.source && e.target === drop.id));
+  assert.ok(t.edges.some((e) => e.source === drop.id && e.target === line.target));
+  assert.equal(t.edges.length, s.edges.length); // two lines out, one joined back, one split into two
+});
+
+test("closed notes stay closed until the problem changes or the badge brings them back", async () => {
+  const { issueKey } = await import("../src/store.js");
+  const s = fresh("broken");
+  const issue = analyze(s.nodes, s.edges, s.classes.length).issues[0];
+  s.dismissIssue(issueKey(issue));
+  assert.ok(useApp.getState().dismissed.includes(issueKey(issue)));
+  useApp.getState().showIssues();
+  assert.equal(useApp.getState().dismissed.length, 0);
+});
