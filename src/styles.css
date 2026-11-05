@@ -603,3 +603,25 @@ body { background: var(--page); color: var(--text); }
   .three-stage { order: -1; border-bottom: 1px solid var(--border); }
   .tour { border-inline-end: 0; overflow: visible; }
 }
+
+/* Glossary words: dotted underline, meaning on hover or focus */
+.term { text-decoration: underline dotted var(--accent-9); text-underline-offset: 3px; text-decoration-thickness: 1.5px; cursor: help; }
+.term:focus-visible { outline: 2px solid var(--accent-9); outline-offset: 1px; border-radius: 2px; }
+.term-tip {
+  position: fixed;
+  z-index: 1000;
+  width: 260px;
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-body);
+  font-size: var(--step--1);
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  box-shadow: 0 4px 14px oklch(0 0 0 / 0.12);
+  pointer-events: none;
+}
+.term-tip b { color: var(--accent-11); margin-inline-end: 4px; }
+.note-code { margin: var(--space-1) 0 0; font-size: 12px; color: var(--text-muted); }
+.note-code code { font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { useApp } from "../src/store.js";
-import { TEMPLATES, buildTemplate, checkConnect, checkInsert, makeNode, probeShape } from "../src/model/graph.js";
+import { TEMPLATES, analyze, buildTemplate, checkConnect, checkInsert, makeNode, probeShape } from "../src/model/graph.js";
 
 const fresh = (id = "cnn") => {
   const t = TEMPLATES.find((x) => x.id === id);
@@ -87,3 +87,24 @@ test("drop-on-line check looks at both sides of the new block", () => {
   assert.equal(checkInsert(outOfFlatten.id, "dropout", s.nodes, s.edges, n), "ok");
   assert.equal(checkInsert(intoFlatten.id, "output", s.nodes, s.edges, n), "bad"); // nothing can follow an output
 });
+
+test("Korean particles follow how block names are read aloud", async () => {
+  const { josa } = await import("../src/model/terms.js");
+  const cases = {
+    Dense: "Dense는", Flatten: "Flatten은", Conv2D: "Conv2D는", MobileNetV2: "MobileNetV2는", GlobalAvgPool: "GlobalAvgPool은",
+    Embedding: "Embedding은", SigLIP: "SigLIP은", "ResNet-18": "ResNet-18은", Concat: "Concat은", Add: "Add는",
+    "분류 출력": "분류 출력은", "글 입력": "글 입력은", "이미지 모양(64×64×3)": "이미지 모양(64×64×3)은", "한 줄로 펴진 벡터(64)": "한 줄로 펴진 벡터(64)는",
+  };
+  for (const [word, want] of Object.entries(cases)) assert.equal(josa(word, "은는"), want);
+});
+
+test("shape errors read naturally and keep the PyTorch message apart", () => {
+  const s = fresh("broken");
+  const dense = byType(s, "dense");
+  const issue = analyze(s.nodes, s.edges, s.classes.length).nodeInfo[dense.id].issue;
+  assert.equal(issue.title, "여기 모양이 안 맞아요");
+  assert.match(issue.text, /^Dense는 한 줄짜리 벡터만 받아요/);
+  assert.doesNotMatch(issue.text, /PyTorch|\(는\)/);
+  assert.match(issue.code, /mat1 and mat2/);
+});
+

@@ -22,6 +22,11 @@ import IssueNote from "./IssueNote.jsx";
 import ViewTabs from "./ViewTabs.jsx";
 import WorkPanel from "./WorkPanel.jsx";
 import { fieldPath } from "../data/hf.js";
+import { Glossed } from "./Term.jsx";
+
+const CODE_ONLY_TIP = "브라우저에서 돌리기엔 커서 Colab에서 학습해요";
+// What the numbers on a line stand for, shown on hover.
+const shapeTip = (s) => (!s ? undefined : s.length === 3 ? "세로×가로×채널" : s.length === 2 ? "토큰 개수×토큰 하나의 길이" : "한 줄짜리 벡터");
 
 const DRAG_TYPE = "application/x-tensorblock";
 // dataTransfer can't be read during dragover, so the palette notes what is being dragged.
@@ -255,7 +260,7 @@ function Palette() {
                   onClick={() => previewBlock(t)}
                 >
                   <span className="pi-name">{LAYERS[t].name}</span>
-                  <span className="pi-ko">{LAYERS[t].exportOnly ? "코드 전용" : LAYERS[t].ko}</span>
+                  <span className="pi-ko">{LAYERS[t].exportOnly ? <span title={CODE_ONLY_TIP}>코드 전용</span> : LAYERS[t].ko}</span>
                 </button>
               </li>
             ))}
@@ -343,7 +348,7 @@ function BlockNode({ id, data }) {
       {!def.source && <Handle type="target" position={Position.Left} />}
       <div className="block-head">
         <span className="block-name">{def.name}</span>
-        <span className="block-ko">{def.exportOnly ? "코드 전용" : def.ko}</span>
+        <span className="block-ko">{def.exportOnly ? <span title={CODE_ONLY_TIP}>코드 전용</span> : def.ko}</span>
       </div>
       <div className="block-sum">{def.summary(data.params, { numClasses: a.numClasses })}</div>
       <div className="block-foot">
@@ -404,7 +409,7 @@ function ShapeEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, tar
             ✂ 연결 끊기
           </button>
         )}
-        <div className={`shape-tag tag-${state} nodrag nopan`} style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)` }}>
+        <div className={`shape-tag tag-${state} nodrag nopan`} title={info && !info.blocked ? shapeTip(info.shape) : undefined} style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)` }}>
           {!info ? "연결 안 됨" : info.blocked ? "?" : fmtShape(info.shape)}
         </div>
         {level && !info.side && (
@@ -433,9 +438,11 @@ function Inspector({ onAdd }) {
       <>
         <p className="small muted insp-kicker">블록 상자에서 고른 블록</p>
         <h2 className="insp-h">
-          {def.name} <span className="muted insp-ko">{def.exportOnly ? "코드 전용" : def.ko}</span>
+          {def.name} <span className="muted insp-ko">{def.exportOnly ? <span title={CODE_ONLY_TIP}>코드 전용</span> : def.ko}</span>
         </h2>
-        <p className="small">{def.about}</p>
+        <p className="small">
+        <Glossed text={def.about} />
+      </p>
         {def.fields.length > 0 && (
           <>
             <h3 className="insp-sub">바꿀 수 있는 값</h3>
@@ -443,7 +450,12 @@ function Inspector({ onAdd }) {
               {def.fields.map((f) => (
                 <li key={f.key}>
                   {f.label}
-                  {f.hint && <span className="muted"> — {f.hint}</span>}
+                  {f.hint && (
+                    <span className="muted">
+                      {" "}
+                      — <Glossed text={f.hint} />
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>
@@ -486,7 +498,9 @@ function Inspector({ onAdd }) {
         ))}
         <h3 className="insp-sub">이렇게 써요</h3>
         <ul className="small tips">
-          <li>선 위의 글자는 그 선을 지나가는 데이터의 모양이에요. 64×64×16은 세로 64, 가로 64, 채널 16이라는 뜻이에요.</li>
+          <li>
+            <Glossed text="선 위의 글자는 그 선을 지나가는 데이터의 모양이에요. 64×64×16은 세로 64, 가로 64, 채널 16이라는 뜻이에요." />
+          </li>
           <li>왼쪽 블록 상자에서 블록을 누르면 설명이 나오고, '블록 추가하기'를 누르면 캔버스에 놓여요.</li>
           <li>블록 오른쪽 점에서 다음 블록 왼쪽 점으로 끌면 연결돼요. 끄는 동안 이을 수 있는 블록은 초록색, 모양이 안 맞는 블록은 빨간색이에요.</li>
           <li>빨간 곳에 이어도 괜찮아요. 왜 안 맞는지 설명과 고치는 버튼이 나와요.</li>
@@ -507,7 +521,9 @@ function Inspector({ onAdd }) {
       <h2 className="insp-h">
         {def.name} <span className="muted insp-ko">{def.ko}</span>
       </h2>
-      <p className="small">{def.about}</p>
+      <p className="small">
+        <Glossed text={def.about} />
+      </p>
       <dl className="shape-io">
         <dt>들어오는 모양</dt>
         <dd className="mono">{info.inShape ? fmtShape(info.inShape) : "–"}</dd>
@@ -541,7 +557,11 @@ function Inspector({ onAdd }) {
               onChange={(e) => setParam(node.id, f.key, Math.max(f.min, Math.min(f.max, Math.round(+e.target.value) || f.min)))}
             />
           )}
-          {f.hint && <p className="hint">{f.hint}</p>}
+          {f.hint && (
+            <p className="hint">
+              <Glossed text={f.hint} />
+            </p>
+          )}
         </div>
       ))}
       {info.issue && <IssueNote issue={info.issue} compact />}

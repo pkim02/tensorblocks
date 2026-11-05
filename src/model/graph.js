@@ -4,6 +4,7 @@
 // pulls in a side branch that starts at its own source (the text input of a VLM) or forks
 // off an earlier block (a ResNet skip connection).
 import { LAYERS } from "./layers.js";
+import { josa } from "./terms.js";
 
 // Blocks sit in one row, left to right. NODE_W must match .layer-block width in styles.css.
 export const NODE_W = 196;
@@ -269,7 +270,7 @@ function analyzeUncached(nodes, edges, numClasses) {
             title: "입력이 너무 많아요",
             text: def.merge
               ? `${def.name}의 입력은 ${most}개까지예요.`
-              : `${def.name}은(는) 입력을 하나만 받아요. 여러 갈래를 합치려면 사이에 Add 블록을 넣어 주세요.`,
+              : `${josa(def.name, "은는")} 입력을 하나만 받아요. 여러 갈래를 합치려면 사이에 Add 블록을 넣어 주세요.`,
             fixes: [],
           }
         : null;
@@ -297,7 +298,7 @@ function analyzeUncached(nodes, edges, numClasses) {
       if (branch.length) r.side[id] = branch;
       branch = [];
       if (def.terminal && (outs.get(id) || []).length) {
-        r.issues.push({ level: "error", title: "출력 뒤에 블록이 있어요", text: `'${def.ko}'은(는) 맨 끝에 와야 해요.`, nodeId: id, fixes: [] });
+        r.issues.push({ level: "error", title: "출력 뒤에 블록이 있어요", text: `'${def.ko}'${josa(def.ko, "은는").slice(def.ko.length)} 맨 끝에 와야 해요.`, nodeId: id, fixes: [] });
       }
     }
   }
