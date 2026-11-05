@@ -398,8 +398,31 @@ function fits(def, params, shapes, ctx) {
   return res.error ? { state: "bad", issue: res.error } : { state: "ok", out: res.out };
 }
 
-// Would a line source → target fit? Mirrors onConnect: a plain block keeps one way in,
-// a merge block adds this one beside the line it already has.
+// The link into a block along the main line (a merge block has a second one from its side branch).
+export function mainLineInto(nodes, edges, numClasses, nodeId) {
+  const into = edges.filter((e) => e.target === nodeId);
+  if (into.length < 2) return into[0];
+  const a = analyze(nodes, edges, numClasses);
+  const i = a.chain.indexOf(nodeId);
+  return into.find((e) => i > 0 && e.source === a.chain[i - 1]) || into[0];
+}
+
+// The lines after drawing source → target. One way in: a new link replaces the old one.
+// A merge block (Concat, Add) keeps up to maxInputs ways in; when it is full, the main line
+// stays and a side one makes room. A block's output can fork, so its other links stay.
+export function connectEdges(nodes, edges, numClasses, source, target) {
+  const def = LAYERS[nodes.find((n) => n.id === target)?.data.type];
+  const merge = def?.merge;
+  let next = edges.filter((e) => e.target !== target || (merge && e.source !== source));
+  if (merge && next.filter((e) => e.target === target).length >= (def.maxInputs ?? 2)) {
+    const keep = mainLineInto(nodes, next, numClasses, target);
+    next = next.filter((e) => e.target !== target || e === keep);
+  }
+  return [...next, makeEdge(source, target)];
+}
+
+// Would a line source → target fit? It draws the line the way onConnect will (connectEdges)
+// and reads the target's inputs, main line first, the way analyze will see them.
 export function checkConnect(sourceId, targetId, nodes, edges, numClasses) {
   if (sourceId === targetId) return "bad";
   const byId = new Map(nodes.map((n) => [n.id, n]));
@@ -409,13 +432,23 @@ export function checkConnect(sourceId, targetId, nodes, edges, numClasses) {
   const sdef = LAYERS[src.data.type];
   const def = LAYERS[tgt.data.type];
   if (sdef.terminal || def.source) return "bad";
-  const a = analyze(nodes, edges, numClasses);
-  const shape = probeShape(sourceId, nodes, edges, numClasses, a);
-  const others = def.merge
-    ? edges.filter((e) => e.target === targetId && e.source !== sourceId).map((e) => probeShape(e.source, nodes, edges, numClasses, a))
-    : [];
-  const shapes = [...others.slice(0, (def.maxInputs ?? 2) - 1), shape];
-  return fits(def, tgt.data.params, shapes, { numClasses: Math.max(numClasses, 2), afterInput: src.data.type === "input" }).state;
+  const after = connectEdges(nodes, edges, numClasses, sourceId, targetId);
+  // A line back into a block that already feeds the source makes a loop ("고리가 생겼어요").
+  const upstream = new Set();
+  for (const stack = [sourceId]; stack.length;) {
+    const id = stack.pop();
+    if (id === targetId) return "bad";
+    if (upstream.has(id)) continue;
+    upstream.add(id);
+    for (const e of after) if (e.target === id) stack.push(e.source);
+  }
+  const a = analyze(nodes, after, numClasses);
+  // A block not on the walk yet (half wired) has no order from analyze: take the lines as they are.
+  const info = a.nodeInfo[targetId];
+  const sources = info && !info.detached && a.inputsOf[targetId] ? a.inputsOf[targetId] : after.filter((e) => e.target === targetId).map((e) => e.source);
+  const shapes = sources.map((id) => probeShape(id, nodes, after, numClasses, a));
+  const afterInput = byId.get(sources[0])?.data.type === "input";
+  return fits(def, tgt.data.params, shapes, { numClasses: Math.max(numClasses, 2), afterInput }).state;
 }
 
 // Would dropping a new `type` block onto this line fit on both sides?

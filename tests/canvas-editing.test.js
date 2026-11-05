@@ -144,3 +144,23 @@ test("closed notes stay closed until the problem changes or the badge brings the
   useApp.getState().showIssues();
   assert.equal(useApp.getState().dismissed.length, 0);
 });
+
+test("a full Concat preview keeps the same inputs the real connection keeps, whatever order the lines were drawn in", () => {
+  const s0 = fresh("vlm-broken");
+  const siglip = byType(s0, "siglip");
+  const concat = byType(s0, "concat");
+  const proj = makeNode("projector", { x: 0, y: 0 });
+  // The image line was cut and drawn again, so it now comes after the text line.
+  const imageLine = s0.edges.find((e) => e.source === siglip.id && e.target === concat.id);
+  useApp.setState({ nodes: [...s0.nodes, proj], edges: s0.edges.filter((e) => e !== imageLine) });
+  useApp.getState().onConnect({ source: siglip.id, target: concat.id });
+  useApp.getState().onConnect({ source: siglip.id, target: proj.id });
+  const s = useApp.getState();
+  const preview = checkConnect(proj.id, concat.id, s.nodes, s.edges, s.classes.length);
+  s.onConnect({ source: proj.id, target: concat.id });
+  const after = useApp.getState();
+  const a = analyze(after.nodes, after.edges, after.classes.length);
+  const real = a.nodeInfo[concat.id].issue?.level === "error" ? "bad" : "ok";
+  assert.equal(real, "bad"); // SigLIP stays as the main line, 1,152 vs 2,304
+  assert.equal(preview, real);
+});

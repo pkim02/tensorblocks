@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { applyNodeChanges, applyEdgeChanges } from "@xyflow/react";
 import { LAYERS } from "./model/layers.js";
 import { defaultDataset } from "./data/dataset.js";
-import { analyze, buildTemplate, makeEdge, makeNode, newId, sidePosition, TEMPLATES, GAP_X, NODE_W } from "./model/graph.js";
+import { analyze, buildTemplate, connectEdges, mainLineInto, makeEdge, makeNode, newId, sidePosition, TEMPLATES, GAP_X, NODE_W } from "./model/graph.js";
 
 const newClass = (name) => ({ id: newId("c"), name, samples: [] });
 
@@ -42,19 +42,8 @@ export const useApp = create((set, get) => ({
   onEdgesChange: (changes) => set((s) => ({ edges: applyEdgeChanges(changes, s.edges) })),
   onConnect: ({ source, target }) => {
     if (source === target) return;
-    // One way in: a new link replaces the old one. A merge block (Concat, Add) keeps up to
-    // two ways in. A block's output can fork, so its other links stay.
-    set((s) => {
-      const def = LAYERS[s.nodes.find((n) => n.id === target)?.data.type];
-      const merge = def?.merge;
-      let edges = s.edges.filter((e) => e.target !== target || (merge && e.source !== source));
-      // Already as many ways in as it takes: keep the main line and swap out the side one.
-      if (merge && edges.filter((e) => e.target === target).length >= (def.maxInputs ?? 2)) {
-        const keep = mainInto({ ...s, edges }, target);
-        edges = edges.filter((e) => e.target !== target || e === keep);
-      }
-      return { templateId: null, edges: [...edges, makeEdge(source, target)] };
-    });
+    // The rules for which old line goes live in connectEdges, shared with the fit preview.
+    set((s) => ({ templateId: null, edges: connectEdges(s.nodes, s.edges, s.classes.length, source, target) }));
   },
   select: (selectedId) => set((s) => ({ selectedId, preview: null, panel: selectedId ? "block" : s.panel })),
   // Picking a block in the palette only explains it; "블록 추가하기" puts it on the canvas.
@@ -244,13 +233,7 @@ export const useAnalysis = () => {
 
 // An edge runs from the right middle of one block to the left middle of the next.
 // The link into a block along the main line (a merge block has a second one from its side branch).
-function mainInto(s, nodeId) {
-  const into = s.edges.filter((e) => e.target === nodeId);
-  if (into.length < 2) return into[0];
-  const a = analyze(s.nodes, s.edges, s.classes.length);
-  const i = a.chain.indexOf(nodeId);
-  return into.find((e) => i > 0 && e.source === a.chain[i - 1]) || into[0];
-}
+const mainInto = (s, nodeId) => mainLineInto(s.nodes, s.edges, s.classes.length, nodeId);
 
 export const issueKey = (issue) => `${issue.nodeId ?? ""}|${issue.title}|${issue.text}`;
 
