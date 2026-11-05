@@ -4,7 +4,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as tf from "@tensorflow/tfjs";
-import { buildTemplate, analyze } from "../src/model/graph.js";
+import { buildTemplate, analyze, TEMPLATES } from "../src/model/graph.js";
+import { useApp } from "../src/store.js";
 import { LAYERS, fmtShapeLong } from "../src/model/layers.js";
 import { buildModel } from "../src/train/train.js";
 import { pytorchCode, kerasCode } from "../src/export/code.js";
@@ -199,7 +200,7 @@ test("exported PyTorch and Keras code carries the helper classes the model uses"
     "class SelfAttention",
     "class TokenPool",
     "PatchEmbed(3, 32, patch_size=8)",
-    "PositionEmbedding(16, 32, learned=True, cls=True)",
+    "PositionEmbedding(16, 32, learned=True, with_cls=True)",
     "SelfAttention(32, num_heads=4)",
     'TokenPool("cls")',
     "nn.GELU()",
@@ -228,4 +229,36 @@ test("every new block has its Korean text and is placed in the palette", () => {
     assert.ok(!def.exportOnly, type);
   }
   assert.ok(!LAYERS.add.exportOnly);
+});
+
+test("templates: the small ViT and ConvNeXt block are ready to train in the browser", () => {
+  for (const id of ["vit", "convnext", "resnet"]) {
+    const t = TEMPLATES.find((x) => x.id === id);
+    const { nodes, edges } = buildTemplate(t);
+    const a = analyze(nodes, edges, 3);
+    assert.equal(a.ok, true, id);
+    assert.equal(a.exportOnly, false, id);
+    const size = nodes.find((n) => n.data.type === "input").data.params.size;
+    const { model, probe } = buildModel({ ...a, byId: new Map(nodes.map((n) => [n.id, n])) }, a.order[0], [size, size, 3], 3);
+    assert.equal(trainableCount(model), a.trainableParams, id);
+    tf.dispose([model, probe]);
+  }
+  const vit = buildTemplate(TEMPLATES.find((x) => x.id === "vit"));
+  const a = analyze(vit.nodes, vit.edges, 3);
+  assert.equal(a.order.filter((id) => vit.nodes.find((n) => n.id === id).data.type === "add").length, 4);
+  assert.deepEqual(a.nodeInfo[a.chain.at(-2)].outShape, [64]);
+});
+
+test("template: the heads mistake shows one red note, and its fix makes the model whole", () => {
+  useApp.getState().loadTemplate("heads-broken");
+  let s = useApp.getState();
+  let a = analyze(s.nodes, s.edges, s.classes.length);
+  const errors = a.issues.filter((i) => i.level === "error");
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].title, "헤드 수로 칸이 안 나눠져요");
+  s.applyFix(errors[0].nodeId, errors[0].fixes[0].action);
+  s = useApp.getState();
+  a = analyze(s.nodes, s.edges, s.classes.length);
+  assert.equal(a.ok, true);
+  assert.equal(s.nodes.find((n) => n.data.type === "attention").data.params.heads, 4);
 });

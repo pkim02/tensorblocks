@@ -22,11 +22,11 @@ const TORCH = {
         return self.proj(x).flatten(2).transpose(1, 2)  # (N, D, H', W') → (N, H'·W', D)`,
 
   PositionEmbedding: `class PositionEmbedding(nn.Module):
-    # 토큰마다 '몇 번째 자리인지'를 더해요. cls=True면 맨 앞에 CLS 토큰 1개를 붙여요.
-    def __init__(self, tokens, dim, learned=True, cls=False):
+    # 토큰마다 '몇 번째 자리인지'를 더해요. with_cls=True면 맨 앞에 CLS 토큰 1개를 붙여요.
+    def __init__(self, tokens, dim, learned=True, with_cls=False):
         super().__init__()
-        n = tokens + (1 if cls else 0)
-        self.cls = nn.Parameter(torch.zeros(1, 1, dim)) if cls else None
+        n = tokens + (1 if with_cls else 0)
+        self.cls = nn.Parameter(torch.zeros(1, 1, dim)) if with_cls else None
         if learned:
             self.pos = nn.Parameter(torch.randn(1, n, dim) * 0.02)
         else:  # 사인·코사인 물결 (학습하지 않아요)
@@ -98,14 +98,14 @@ const TORCH = {
 
 const KERAS = {
   PositionEmbedding: `class PositionEmbedding(layers.Layer):
-    # 토큰마다 '몇 번째 자리인지'를 더해요. cls=True면 맨 앞에 CLS 토큰 1개를 붙여요.
-    def __init__(self, learned=True, cls=False, **kwargs):
+    # 토큰마다 '몇 번째 자리인지'를 더해요. with_cls=True면 맨 앞에 CLS 토큰 1개를 붙여요.
+    def __init__(self, learned=True, with_cls=False, **kwargs):
         super().__init__(**kwargs)
-        self.learned, self.cls = learned, cls
+        self.learned, self.with_cls = learned, with_cls
 
     def build(self, input_shape):
-        n, dim = int(input_shape[1]) + (1 if self.cls else 0), int(input_shape[2])
-        if self.cls:
+        n, dim = int(input_shape[1]) + (1 if self.with_cls else 0), int(input_shape[2])
+        if self.with_cls:
             self.cls_token = self.add_weight(name="cls_token", shape=(1, 1, dim), initializer="zeros")
         if self.learned:
             self.pos = self.add_weight(name="pos", shape=(1, n, dim), initializer=keras.initializers.RandomNormal(stddev=0.02))
@@ -118,12 +118,12 @@ const KERAS = {
             self.pos = tf.constant(pe)
 
     def call(self, x):
-        if self.cls:
+        if self.with_cls:
             x = tf.concat([tf.tile(self.cls_token, [tf.shape(x)[0], 1, 1]), x], axis=1)
         return x + self.pos
 
     def get_config(self):
-        return {**super().get_config(), "learned": self.learned, "cls": self.cls}`,
+        return {**super().get_config(), "learned": self.learned, "with_cls": self.with_cls}`,
 
   SelfAttention: `class SelfAttention(layers.Layer):
     # 토큰마다 다른 토큰을 살펴봐요. causal=True면 자기보다 앞쪽 토큰만 봐요.

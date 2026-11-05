@@ -1079,7 +1079,7 @@ export function torchLines(type, p, inShape, outShape) {
       return [`PatchEmbed(${inShape[2]}, ${p.dim}, patch_size=${p.patch}),`];
     case "posembed": {
       const cls = outShape && outShape[0] > inShape[0];
-      return [`PositionEmbedding(${inShape[0]}, ${inShape[1]}, learned=${p.mode === "learned" ? "True" : "False"}${cls ? ", cls=True" : ""}),`];
+      return [`PositionEmbedding(${inShape[0]}, ${inShape[1]}, learned=${p.mode === "learned" ? "True" : "False"}${cls ? ", with_cls=True" : ""}),`];
     }
     case "attention":
       return [`SelfAttention(${inShape[1]}, num_heads=${p.heads}${p.mask === "causal" ? ", causal=True" : ""}),`];
@@ -1118,7 +1118,7 @@ export function kerasLines(type, p, inShape, outShape) {
     case "patchembed":
       return [`layers.Conv2D(${p.dim}, ${p.patch}, strides=${p.patch}),`, `layers.Reshape((${outShape[0]}, ${p.dim})),`];
     case "posembed":
-      return [`PositionEmbedding(learned=${p.mode === "learned" ? "True" : "False"}${outShape && outShape[0] > inShape[0] ? ", cls=True" : ""}),`];
+      return [`PositionEmbedding(learned=${p.mode === "learned" ? "True" : "False"}${outShape && outShape[0] > inShape[0] ? ", with_cls=True" : ""}),`];
     case "attention":
       return [`SelfAttention(${inShape[1]}, num_heads=${p.heads}${p.mask === "causal" ? ", causal=True" : ""}),`];
     case "seqpool":
