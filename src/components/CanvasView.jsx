@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   ReactFlow,
   Background,
@@ -11,11 +11,13 @@ import {
   EdgeLabelRenderer,
   getBezierPath,
   useConnection,
+  useNodesInitialized,
   useReactFlow,
 } from "@xyflow/react";
 import { useApp, useAnalysis, nearestEdge, edgesWithout } from "../store.js";
 import { LAYERS, PALETTE, fmtShape, fmtShapeLong, fmtCount, torchLines, torchShape } from "../model/layers.js";
 import { TEMPLATES, NODE_W, checkConnect, checkInsert } from "../model/graph.js";
+
 import AuthButton from "./AuthButton.jsx";
 import ProjectControls from "./ProjectControls.jsx";
 import IssueNote from "./IssueNote.jsx";
@@ -25,7 +27,6 @@ import { fieldPath } from "../data/hf.js";
 import { Glossed } from "./Term.jsx";
 import { useHistory, undo, redo, dragStart, dragEnd } from "../history.js";
 
-const CODE_ONLY_TIP = "브라우저에서 돌리기엔 커서 Colab에서 학습해요";
 // What the numbers on a line stand for, shown on hover.
 const shapeTip = (s) => (!s ? undefined : s.length === 3 ? "세로×가로×채널" : s.length === 2 ? `토큰 개수×토큰 하나의 길이: ${fmtShapeLong(s)}` : "한 줄짜리 벡터");
 
@@ -53,6 +54,8 @@ export default function CanvasView() {
   const loadTemplate = useApp((s) => s.loadTemplate);
   const training = useApp((s) => s.train.status === "training");
   const projectRevision = useApp((s) => s.projectRevision);
+  const leftOpen = useApp((s) => s.leftOpen);
+  const rightOpen = useApp((s) => s.rightOpen);
   const a = useAnalysis();
   const rf = useReactFlow();
 
@@ -93,11 +96,13 @@ export default function CanvasView() {
         const ns = rf.getNodes();
         if (!el || !ns.length) return;
         const b = rf.getNodesBounds(ns);
-        const pad = 32;
+        const { leftOpen, rightOpen } = useApp.getState();
+        // A folded panel leaves a small tab on that edge; keep the blocks clear of it.
+        const pad = leftOpen && rightOpen ? 32 : 96;
         const zoom = Math.max(0.45, Math.min(1, (el.clientWidth - 2 * pad) / b.width));
         const fits = b.width * zoom <= el.clientWidth - 2 * pad;
         const x = fits ? (el.clientWidth - b.width * zoom) / 2 - b.x * zoom : pad - b.x * zoom;
-        const y = el.clientHeight * 0.38 - (b.y + b.height / 2) * zoom;
+        const y = el.clientHeight * (leftOpen || rightOpen ? 0.38 : 0.48) - (b.y + b.height / 2) * zoom;
         rf.setViewport({ x, y, zoom }, { duration: 200 });
       }, 60),
     [rf],
@@ -119,7 +124,12 @@ export default function CanvasView() {
   useEffect(() => {
     if (keepView.current) keepView.current = false;
     else fit();
-  }, [count, fit, projectRevision]);
+  }, [count, fit, projectRevision, leftOpen, rightOpen]);
+  // The first frame runs before the blocks have sizes, which left the last block cut off.
+  const measured = useNodesInitialized();
+  useEffect(() => {
+    if (measured) fit();
+  }, [measured, fit]);
 
   // A block already on the canvas, dragged over a line: same green/red hint as a palette
   // drag, and letting go slots it in between. Input and output blocks only ever sit at the ends.
@@ -177,7 +187,7 @@ export default function CanvasView() {
   };
 
   return (
-    <div className="canvas-view">
+    <div className={`canvas-view${leftOpen || rightOpen ? "" : " simple"}`}>
       <header className="work-bar">
         <ViewTabs />
         <h1 className="visually-hidden">블록 캔버스</h1>
@@ -207,20 +217,22 @@ export default function CanvasView() {
             모양이 모두 맞아요
           </span>
         )}
-        <span className="small muted bar-params">
-          학습할 값 <span className="num-inline">{fmtCount(a.trainableParams)}</span>개
+        <span className="bar-rest">
+          <span className="small muted bar-params">
+            학습할 값 <span className="num-inline">{fmtCount(a.trainableParams)}</span>개
+          </span>
+          <button
+            className="btn outline small"
+            onClick={() => {
+              tidy();
+              fit();
+            }}
+          >
+            한 줄로 정렬
+          </button>
+          <ProjectControls />
+          <AuthButton />
         </span>
-        <button
-          className="btn outline small"
-          onClick={() => {
-            tidy();
-            fit();
-          }}
-        >
-          한 줄로 정렬
-        </button>
-        <ProjectControls />
-        <AuthButton />
       </header>
 
       <div className="canvas-body">
@@ -232,8 +244,8 @@ export default function CanvasView() {
           onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget) && useApp.getState().setDropHint(null)}
           onDrop={onDrop}
         >
-          <TemplateIntro />
           <UndoRedo disabled={training} />
+          <FoldedTabs leftOpen={leftOpen} rightOpen={rightOpen} />
           <ReactFlow
             nodes={nodes}
             edges={edges.map((e) => (training ? { ...e, className: "flowing" } : e))}
@@ -267,12 +279,41 @@ export default function CanvasView() {
   );
 }
 
+// What's left of a folded panel: a small tab on that edge of the canvas that opens it again.
+function FoldedTabs({ leftOpen, rightOpen }) {
+  const setLeftOpen = useApp((s) => s.setLeftOpen);
+  const setPanel = useApp((s) => s.setPanel);
+  return (
+    <>
+      {!leftOpen && (
+        <div className="edge-tabs edge-left">
+          <button onClick={() => setLeftOpen(true)}>블록 목록</button>
+        </div>
+      )}
+      {!rightOpen && (
+        <div className="edge-tabs edge-right" role="group" aria-label="작업 단계 열기">
+          <button onClick={() => setPanel("data")}>1 데이터</button>
+          <button onClick={() => setPanel("train")}>2 학습</button>
+          <button onClick={() => setPanel("test")}>3 시험</button>
+        </div>
+      )}
+    </>
+  );
+}
+
 function Palette() {
   const preview = useApp((s) => s.preview);
   const previewBlock = useApp((s) => s.previewBlock);
+  const open = useApp((s) => s.leftOpen);
+  const setLeftOpen = useApp((s) => s.setLeftOpen);
   return (
-    <aside className="palette" aria-label="블록 상자">
-      <p className="small muted">눌러서 설명을 보고 '블록 추가하기'로 넣어요. 캔버스로 끌어다 놓아도 돼요. 선 위에 놓으면 그 사이에 끼워져요.</p>
+    <aside className={`palette${open ? "" : " panel-closed"}`} aria-label="블록 상자">
+      <div className="palette-top">
+        <h2 className="palette-title">블록 목록</h2>
+        <button className="panel-fold" aria-label="블록 목록 접기" title="블록 목록 접기" onClick={() => setLeftOpen(false)}>
+          ‹
+        </button>
+      </div>
       {PALETTE.map((g) => (
         <div key={g.title} className="palette-group">
           <h2 className="palette-h">{g.title}</h2>
@@ -295,7 +336,7 @@ function Palette() {
                   onClick={() => previewBlock(t)}
                 >
                   <span className="pi-name">{LAYERS[t].name}</span>
-                  <span className="pi-ko">{LAYERS[t].exportOnly ? <span title={CODE_ONLY_TIP}>코드 전용</span> : LAYERS[t].ko}</span>
+                  <span className="pi-ko">{LAYERS[t].ko}</span>
                 </button>
               </li>
             ))}
@@ -318,35 +359,6 @@ function UndoRedo({ disabled }) {
         ↷
       </button>
     </div>
-  );
-}
-
-// A short note over the canvas saying what the ready-made model is, until the learner
-// closes it or starts changing the model.
-function TemplateIntro() {
-  const templateId = useApp((s) => s.templateId);
-  const [closed, setClosed] = useState(null);
-  const t = TEMPLATES.find((x) => x.id === templateId);
-  if (!t || closed === t.id) return null;
-  return (
-    <section className="template-intro" aria-label="모델 안내">
-      <button className="intro-close" aria-label="안내 닫기" onClick={() => setClosed(t.id)}>
-        ×
-      </button>
-      <h2 className="intro-h">{t.intro ?? t.name}</h2>
-      {t.steps ? (
-        <ol className="intro-steps" role="list">
-          {t.steps.map(([name, what]) => (
-            <li key={name}>
-              <b>{name}</b> {what}
-            </li>
-          ))}
-        </ol>
-      ) : (
-        <p className="small">{t.text}</p>
-      )}
-      <p className="small muted">각 블록을 눌러 어떤 역할을 하는지 알아보세요.</p>
-    </section>
   );
 }
 
@@ -400,7 +412,7 @@ function BlockNode({ id, data }) {
       {!def.source && <Handle type="target" position={Position.Left} />}
       <div className="block-head">
         <span className="block-name">{def.name}</span>
-        <span className="block-ko">{def.exportOnly ? <span title={CODE_ONLY_TIP}>코드 전용</span> : def.ko}</span>
+        <span className="block-ko">{def.ko}</span>
       </div>
       <div className="block-sum">{def.summary(data.params, { numClasses: a.numClasses })}</div>
       <div className="block-foot">
@@ -490,7 +502,7 @@ function Inspector({ onAdd }) {
       <>
         <p className="small muted insp-kicker">블록 상자에서 고른 블록</p>
         <h2 className="insp-h">
-          {def.name} <span className="muted insp-ko">{def.exportOnly ? <span title={CODE_ONLY_TIP}>코드 전용</span> : def.ko}</span>
+          {def.name} <span className="muted insp-ko">{def.ko}</span>
         </h2>
         <p className="small">
         <Glossed text={def.about} />

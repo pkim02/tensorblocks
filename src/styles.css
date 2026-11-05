@@ -30,8 +30,8 @@ body { background: var(--page); color: var(--text); }
 .brand { font-weight: 700; font-size: var(--step-0); margin-inline-end: var(--space-2); }
 
 /* ── Work panel: data → training → testing, right of the canvas ─ */
-.work-panel { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; border-inline-start: 1px solid var(--border); background: var(--surface); }
-.work-tabs { display: grid; grid-template-columns: repeat(4, auto); border-bottom: 1px solid var(--border); }
+.work-panel { width: 20rem; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; border-inline-start: 1px solid var(--border); background: var(--surface); }
+.work-tabs { display: grid; grid-template-columns: repeat(4, auto) 2.25rem; border-bottom: 1px solid var(--border); }
 .work-tabs button {
   padding: var(--space-3) var(--space-2);
   border: 0;
@@ -255,10 +255,15 @@ body { background: var(--page); color: var(--text); }
 .view-tabs button[aria-current="page"] { background: var(--surface); color: var(--accent-11); box-shadow: 0 0 0 1px var(--border); }
 
 .canvas-view { height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr); }
-.canvas-body { display: grid; grid-template-columns: 12.5rem minmax(0, 1fr) 20rem; min-height: 0; }
+.canvas-body { display: flex; min-height: 0; }
+.canvas-body > .flow { flex: 1; }
+.canvas-body > .palette, .canvas-body > .work-panel { flex: none; }
+.bar-rest { display: contents; }
+.panel-closed { display: none !important; }
 
-.palette { overflow: hidden auto; padding: var(--space-4); border-inline-end: 1px solid var(--border); }
-.palette > p { margin: 0 0 var(--space-4); }
+.palette { width: 12.5rem; overflow: hidden auto; padding: var(--space-4); border-inline-end: 1px solid var(--border); }
+.palette-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-2); }
+.palette-title { margin: 0; font-size: var(--step-0); font-weight: 700; }
 .palette-group + .palette-group { margin-top: var(--space-4); }
 .palette-h { font-size: var(--step--1); color: var(--text-muted); margin: 0 0 var(--space-2); font-weight: 700; }
 .palette ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-1); }
@@ -417,46 +422,79 @@ body { background: var(--page); color: var(--text); }
 .flow .react-flow__edge { cursor: pointer; }
 
 /* Ready-made model guide over the canvas */
-.template-intro {
-  position: absolute;
-  top: var(--space-3);
-  left: var(--space-3);
-  z-index: 6;
-  max-width: min(26rem, calc(100% - 2 * var(--space-3) - 90px)); /* leaves room for undo/redo */
-  padding: var(--space-3) var(--space-4);
-  padding-inline-end: var(--space-6, 2rem);
-  background: var(--surface);
-  border: 1px solid var(--accent-7, var(--border-strong));
-  border-inline-start: 4px solid var(--accent-9);
-  border-radius: var(--radius-surface);
-  box-shadow: 0 2px 10px oklch(0 0 0 / 0.08);
-}
-.template-intro p { margin: var(--space-1) 0 0; }
-.intro-h { margin: 0; font-size: var(--step-0); font-weight: 700; }
-.intro-steps { margin: var(--space-2) 0 0; padding-inline-start: 1.3em; font-size: var(--step--1); display: grid; gap: 2px; }
-.intro-steps li { margin: 0; }
-.intro-steps b { font-weight: 700; margin-inline-end: 4px; }
-.intro-close {
-  position: absolute;
-  top: 4px;
-  right: 6px;
-  width: 28px;
-  height: 28px;
-  font-size: 18px;
-  line-height: 1;
-  color: var(--text-muted);
-  background: none;
+
+/* Folding the side panels. A folded panel leaves a tab on the canvas edge. */
+.panel-fold {
+  width: 2.25rem;
+  min-height: 2.25rem;
+  padding: 0;
   border: 0;
   border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--step-1);
+  line-height: 1;
   cursor: pointer;
 }
-.intro-close:hover { background: var(--gray-3); color: var(--text); }
+.panel-fold:hover { background: var(--gray-3); color: var(--text); }
+.work-tabs .panel-fold { border-radius: 0; border-bottom: 2px solid transparent; }
+.edge-tabs {
+  position: absolute;
+  z-index: 6;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 1px 4px oklch(0.3 0.01 165 / 0.14);
+}
+.edge-left { left: 0; border-inline-start: 0; border-radius: 0 var(--radius-surface) var(--radius-surface) 0; }
+.edge-right { right: 0; border-inline-end: 0; border-radius: var(--radius-surface) 0 0 var(--radius-surface); }
+.edge-tabs button {
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--step--1);
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.edge-tabs button + button { border-top: 1px solid var(--border); }
+.edge-tabs button:hover { color: var(--accent-11); background: var(--accent-2); }
+
+/* Both panels folded: just the model on graph paper, as simple as Teachable Machine.
+   Details come back when a block is clicked or a panel is opened; shape tags and
+   correction notes stay, because they are the product. */
+.simple .undo-redo,
+.simple .react-flow__controls,
+.simple .react-flow__minimap,
+.simple .block-sum,
+.simple .block-foot { display: none; }
+.simple .work-bar { border-bottom: 0; }
+.simple .layer-block,
+.simple .layer-block.g-pretrained {
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border-color: transparent;
+  box-shadow: 0 1px 3px oklch(0.3 0.01 165 / 0.18), 0 2px 8px oklch(0.3 0.01 165 / 0.08);
+}
+.simple .layer-block.has-error { border-color: var(--danger-9); }
+.simple .layer-block.detached { border-color: var(--border-strong); }
+.simple .block-head { flex-direction: column; gap: 2px; }
+
 
 @media (max-width: 56rem) {
   .canvas-view { height: auto; min-height: 100dvh; }
-  .canvas-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 70dvh auto; }
+  .canvas-body { flex-direction: column; }
+  .canvas-body > .flow { flex: none; height: 70dvh; }
+  .palette, .work-panel { width: auto; }
+  .palette-top { flex: none; margin-bottom: 0; align-self: flex-start; gap: var(--space-1); }
+  .palette-title { white-space: nowrap; }
   .palette { border-inline-end: 0; border-bottom: 1px solid var(--border); }
-  .palette > p { display: none; }
   .palette { display: flex; gap: var(--space-3); overflow-x: auto; }
   .palette-group + .palette-group { margin-top: 0; }
   .palette ul { grid-auto-flow: column; }

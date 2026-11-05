@@ -17,7 +17,7 @@ export function blockers(analysis, classes) {
       text:
         analysis.kind === "vlm"
           ? "VLM은 너무 커서 브라우저에서 돌릴 수 없어요. Colab 코드로 가져가서 돌려 주세요."
-          : "코드 전용 블록이 있어서 브라우저에서 학습할 수 없어요. Colab 코드로 가져가서 돌려 주세요.",
+          : "이 모델은 커서 브라우저에서 학습할 수 없어요. Colab 코드로 가져가서 돌려 주세요.",
       code: true,
     });
   if (analysis.kind === "vlm") return out; // No classes: its data is photo + question + answer.

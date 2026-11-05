@@ -15,14 +15,20 @@ export default function WorkPanel({ inspector }) {
   const panel = useApp((s) => s.panel);
   const setPanel = useApp((s) => s.setPanel);
   const projectRevision = useApp((s) => s.projectRevision);
+  const open = useApp((s) => s.rightOpen);
+  const setRightOpen = useApp((s) => s.setRightOpen);
+  // Stays mounted while folded, so a running webcam or half-typed class name isn't lost.
   return (
-    <aside className="work-panel" aria-label="작업 패널">
+    <aside className={`work-panel${open ? "" : " panel-closed"}`} aria-label="작업 패널">
       <nav className="work-tabs" aria-label="작업 단계">
         {TABS.map(([id, n, label]) => (
           <button key={id} aria-current={panel === id ? "step" : undefined} onClick={() => setPanel(id)}>
             {n && <span className="mono">{n}</span>} {label}
           </button>
         ))}
+        <button className="panel-fold" aria-label="오른쪽 패널 접기" title="오른쪽 패널 접기" onClick={() => setRightOpen(false)}>
+          ›
+        </button>
       </nav>
       <div className="work-body">
         {panel === "data" && <DataPanel key={projectRevision} />}
