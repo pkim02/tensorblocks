@@ -422,7 +422,7 @@ body { background: var(--page); color: var(--text); }
   top: var(--space-3);
   left: var(--space-3);
   z-index: 6;
-  max-width: min(26rem, calc(100% - 2 * var(--space-3)));
+  max-width: min(26rem, calc(100% - 2 * var(--space-3) - 90px)); /* leaves room for undo/redo */
   padding: var(--space-3) var(--space-4);
   padding-inline-end: var(--space-6, 2rem);
   background: var(--surface);
@@ -645,5 +645,29 @@ body { background: var(--page); color: var(--text); }
 .note:has(.note-close) .note-title { padding-inline-end: 24px !important; }
 
 /* Undo / redo in the top bar */
-.undo-redo { display: inline-flex; gap: var(--space-1); }
-.undo-redo .btn { white-space: nowrap; }
+.undo-redo {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  z-index: 6;
+  display: flex;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  box-shadow: 0 1px 4px oklch(0 0 0 / 0.08);
+  overflow: hidden;
+}
+.undo-redo button {
+  width: 36px;
+  height: 32px;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--text);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.undo-redo button + button { border-inline-start: 1px solid var(--border); }
+.undo-redo button:hover:not(:disabled) { background: var(--gray-3); }
+.undo-redo button:disabled { color: var(--gray-8); cursor: default; }
+.undo-redo button:focus-visible { outline: 2px solid var(--accent-9); outline-offset: -2px; }

@@ -180,7 +180,6 @@ export default function CanvasView() {
     <div className="canvas-view">
       <header className="work-bar">
         <ViewTabs />
-        <UndoRedo disabled={training} />
         <h1 className="visually-hidden">블록 캔버스</h1>
         <select
           aria-label="모델 틀 불러오기"
@@ -234,6 +233,7 @@ export default function CanvasView() {
           onDrop={onDrop}
         >
           <TemplateIntro />
+          <UndoRedo disabled={training} />
           <ReactFlow
             nodes={nodes}
             edges={edges.map((e) => (training ? { ...e, className: "flowing" } : e))}
@@ -310,12 +310,12 @@ function UndoRedo({ disabled }) {
   const canUndo = useHistory((h) => h.canUndo);
   const canRedo = useHistory((h) => h.canRedo);
   return (
-    <div className="undo-redo" role="group" aria-label="되돌리기">
-      <button className="btn outline small" onClick={undo} disabled={disabled || !canUndo} title="이전으로 되돌리기 (Ctrl+Z)">
-        ↶ 이전
+    <div className="undo-redo" role="group" aria-label="되돌리기와 다시 하기">
+      <button onClick={undo} disabled={disabled || !canUndo} aria-label="되돌리기" title="되돌리기 (Ctrl+Z)">
+        ↶
       </button>
-      <button className="btn outline small" onClick={redo} disabled={disabled || !canRedo} title="다시 하기 (Ctrl+Shift+Z)">
-        이후 ↷
+      <button onClick={redo} disabled={disabled || !canRedo} aria-label="다시 하기" title="다시 하기 (Ctrl+Shift+Z)">
+        ↷
       </button>
     </div>
   );
